@@ -1,0 +1,28 @@
+---
+- name: Wait for mongod to start
+  wait_for:
+    port: "{{ mongod_port }}"
+    timeout: 30
+
+- name: Build member list
+  set_fact:
+    repl_members: >
+      [{% for h in groups['primary'] %}{ "_id": 0, "host": "{{ hostvars[h].ansible_host | default(h) }}:{{ mongod_port }}" }{% endfor %}{% for i,h in enumerate(groups['secondary']) %}, {"_id": {{ i+1 }}, "host": "{{ hostvars[h].ansible_host | default(h) }}:{{ mongod_port }}" }{% endfor %}{% for j,h in enumerate(groups['arbiter']) %}, {"_id": {{ (groups['primary']|length + groups['secondary']|length + j) }}, "host": "{{ hostvars[h].ansible_host | default(h) }}:{{ mongod_port }}", "arbiterOnly": true }{% endfor %}]
+
+- name: Initiate replica set
+  shell: |
+    mongosh --quiet --eval 'rs.initiate({_id: "{{ replset_name }}", members: {{ repl_members | to_json }}})'
+  register: rs_init
+  failed_when: rs_init.rc != 0 and 'already initialized' not in rs_init.stdout
+
+- name: Create admin user
+  shell: |
+    mongosh --quiet <<'EOS'
+    use admin
+    if (db.getUser("{{ admin_user }}") == null) {
+      db.createUser({user:"{{ admin_user }}", pwd:"{{ admin_password }}", roles:["root"]});
+      print("created");
+    } else { print("exists"); }
+    EOS
+  register: admin_user_out
+  changed_when: '"created" in admin_user_out.stdout'

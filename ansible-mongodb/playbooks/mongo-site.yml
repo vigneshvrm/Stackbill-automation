@@ -1,0 +1,2 @@
+---
+- import_playbook: ../../ansible/playbooks/mongodb.yml

@@ -1,0 +1,115 @@
+---
+- name: Setup NFS server on Ubuntu 22.x+
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    mount_point: /storage
+    export_dir: /storage/k8-data
+    fstype: xfs
+    disk_device: "{{ disk_device | default('/dev/sdb1') }}"
+    client_ip_range: "{{ client_ip_range | default('192.168.43.0/24') }}"
+
+  pre_tasks:
+    - name: Ensure host is Ubuntu 22.04 or greater
+      assert:
+        that:
+          - ansible_facts['distribution'] == "Ubuntu"
+          - ansible_facts['distribution_major_version'] | int >= 22
+        fail_msg: "This playbook only supports Ubuntu 22.x or greater."
+        success_msg: "Host meets Ubuntu version requirement."
+
+  tasks:
+    - name: Ensure required packages are installed
+      apt:
+        name:
+          - nfs-kernel-server
+          - xfsprogs
+        state: present
+        update_cache: yes
+
+    - name: Check if filesystem exists on disk
+      command: blkid -o value -s TYPE {{ disk_device }}
+      register: fs_check
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Format disk with XFS if not already formatted
+      filesystem:
+        fstype: "{{ fstype }}"
+        dev: "{{ disk_device }}"
+      when: (fs_check.stdout is defined and fs_check.stdout == "") or (fs_check.stdout is not defined)
+
+    - name: Create storage mount point
+      file:
+        path: "{{ mount_point }}"
+        state: directory
+        mode: '0755'
+
+    - name: Mount storage device
+      block:
+        - name: Perform mount
+          mount:
+            path: "{{ mount_point }}"
+            src: "{{ disk_device }}"
+            fstype: "{{ fstype }}"
+            state: mounted
+      rescue:
+        - name: Force reformat disk with XFS after mount failure
+          filesystem:
+            fstype: "{{ fstype }}"
+            dev: "{{ disk_device }}"
+            force: yes
+        - name: Retry mounting storage device after reformat
+          mount:
+            path: "{{ mount_point }}"
+            src: "{{ disk_device }}"
+            fstype: "{{ fstype }}"
+            state: mounted
+
+    - name: Ensure mount is persistent in /etc/fstab
+      mount:
+        path: "{{ mount_point }}"
+        src: "{{ disk_device }}"
+        fstype: "{{ fstype }}"
+        opts: defaults
+        state: present
+
+    - name: Create NFS share directory
+      file:
+        path: "{{ export_dir }}"
+        state: directory
+        owner: nobody
+        group: nogroup
+        mode: '0777'
+
+    - name: Configure NFS export in /etc/exports
+      lineinfile:
+        path: /etc/exports
+        regexp: "^{{ export_dir }}"
+        line: "{{ export_dir }} {{ client_ip_range }}(rw,sync,no_subtree_check,no_root_squash)"
+        create: yes
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Export NFS shares
+      command: exportfs -a
+      changed_when: false
+
+    - name: Enable and restart NFS service
+      systemd:
+        name: nfs-kernel-server
+        enabled: yes
+        state: restarted
+
+    - name: Display NFS configuration summary
+      debug:
+        msg:
+          - "✅ NFS server setup complete!"
+          - "📦 Disk device: {{ disk_device }}"
+          - "📂 Mount point: {{ mount_point }}"
+          - "📂 Export directory: {{ export_dir }}"
+          - "🌐 Client IP range: {{ client_ip_range }}"
+          - "🎉 Export ready at {{ export_dir }} for {{ client_ip_range }}"

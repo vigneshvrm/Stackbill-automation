@@ -1,0 +1,27 @@
+---
+- name: Fetch keyfile from primary
+  when: "'primary' in group_names"
+  fetch:
+    src: "{{ keyfile_path }}"
+    dest: "/tmp/mongodb_key_from_primary"
+    flat: yes
+
+- name: Distribute keyfile to other nodes
+  when: "'primary' in groups and inventory_hostname == groups['primary'][0]"
+  delegate_to: localhost
+  run_once: true
+  block:
+    - name: Read keyfile
+      slurp:
+        src: "/tmp/mongodb_key_from_primary"
+      register: key_data
+
+    - name: Push keyfile to others
+      copy:
+        content: "{{ key_data.content | b64decode }}"
+        dest: "{{ keyfile_path }}"
+        owner: mongodb
+        group: mongodb
+        mode: "0600"
+      delegate_to: "{{ item }}"
+      loop: "{{ groups['secondary'] + groups['arbiter'] }}"

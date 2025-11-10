@@ -1,0 +1,61 @@
+---
+- name: Ensure binary logging and replication settings enabled on master
+  when: "'primary' in group_names"
+  block:
+    - name: Update server-id and log_bin on master
+      lineinfile:
+        path: "{{ mysql_conf_path }}"
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        insertafter: EOF
+      loop:
+        - { regexp: '^server-id', line: 'server-id=1' }
+        - { regexp: '^log_bin', line: 'log_bin=/var/log/mysql/mysql-bin.log' }
+      notify: Restart MySQL
+
+    - name: Create replication user
+      mysql_user:
+        name: "{{ replication_user }}"
+        password: "{{ replication_password }}"
+        host: "%"
+        priv: "*.*:REPLICATION SLAVE"
+        state: present
+
+    - name: Get master status
+      command: mysql -NBe "SHOW MASTER STATUS;"
+      register: master_status
+
+    - set_fact:
+        master_log_file: "{{ master_status.stdout_lines[0].split('\t')[0] }}"
+        master_log_pos: "{{ master_status.stdout_lines[0].split('\t')[1] }}"
+
+    - debug:
+        msg:
+          - "Master Log File: {{ master_log_file }}"
+          - "Master Log Position: {{ master_log_pos }}"
+
+- name: Configure slave replication
+  when: "'secondary' in group_names"
+  block:
+    - name: Update server-id on slave
+      lineinfile:
+        path: "{{ mysql_conf_path }}"
+        regexp: '^server-id'
+        line: "server-id=2"
+        insertafter: EOF
+      notify: Restart MySQL
+
+    - name: Configure replication on slave
+      shell: |
+        mysql -e "
+        STOP SLAVE;
+        CHANGE MASTER TO
+          MASTER_HOST='{{ hostvars[groups['primary'][0]].ansible_host }}',
+          MASTER_USER='{{ replication_user }}',
+          MASTER_PASSWORD='{{ replication_password }}',
+          MASTER_LOG_FILE='{{ hostvars[groups['primary'][0]].master_log_file }}',
+          MASTER_LOG_POS={{ hostvars[groups['primary'][0]].master_log_pos }};
+        START SLAVE;
+        SHOW SLAVE STATUS\G;"
+      args:
+        executable: /bin/bash

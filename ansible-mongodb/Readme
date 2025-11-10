@@ -1,0 +1,4 @@
+ansible-playbook -i inventory/hosts.ini playbooks/mongo-site.yml -e "deployment_mode=cluster"
+
+
+ansible-playbook -i inventory/hosts.ini playbooks/mongo-site.yml -e "deployment_mode=single"

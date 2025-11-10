@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StackBill Ansible Playbook Executor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .playbook-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .playbook-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            cursor: pointer;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        
+        .playbook-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+        }
+        
+        .playbook-card h2 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 1.5em;
+        }
+        
+        .playbook-card p {
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .form-container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            display: none;
+        }
+        
+        .form-container.active {
+            display: block;
+        }
+        
+        .form-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+        
+        .form-header h2 {
+            color: #667eea;
+        }
+        
+        .close-btn {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+        
+        .close-btn:hover {
+            background: #d32f2f;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+        
+        input, select, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .server-list {
+            border: 2px dashed #e0e0e0;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .server-item {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+        
+        .server-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .add-server-btn, .remove-server-btn {
+            background: #4caf50;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+        
+        .remove-server-btn {
+            background: #f44336;
+            margin-top: 0;
+            margin-left: 10px;
+        }
+        
+        .add-server-btn:hover {
+            background: #45a049;
+        }
+        
+        .remove-server-btn:hover {
+            background: #d32f2f;
+        }
+        
+        .submit-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1.1em;
+            width: 100%;
+            font-weight: 600;
+            transition: background 0.3s;
+        }
+        
+        .submit-btn:hover {
+            background: #5568d3;
+        }
+        
+        .submit-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .result-container {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 6px;
+            display: none;
+        }
+        
+        .result-container.success {
+            background: #d4edda;
+            border: 2px solid #c3e6cb;
+            color: #155724;
+            display: block;
+        }
+        
+        .result-container.error {
+            background: #f8d7da;
+            border: 2px solid #f5c6cb;
+            color: #721c24;
+            display: block;
+        }
+        
+        .result-container pre {
+            background: rgba(0,0,0,0.05);
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin-top: 10px;
+            font-size: 0.85em;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+        
+        .loading.active {
+            display: block;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .progress-panel {
+            display: none;
+            margin-top: 20px;
+            border: 1px solid #e0e7ff;
+            border-radius: 8px;
+            background: #ffffff;
+            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.08);
+        }
+
+        .progress-summary {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 18px;
+            border-bottom: 1px solid #e8eeff;
+            cursor: pointer;
+            background: linear-gradient(90deg, rgba(102, 126, 234, 0.08), rgba(118, 75, 162, 0.08));
+        }
+
+        .progress-summary-text {
+            font-weight: 600;
+            color: #4254c5;
+        }
+
+        .progress-summary-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .mini-progress {
+            width: 120px;
+            height: 6px;
+            border-radius: 4px;
+            background: rgba(66, 84, 197, 0.2);
+            overflow: hidden;
+        }
+
+        .mini-progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s ease;
+        }
+
+        .mini-progress-label {
+            font-size: 0.8em;
+            font-weight: 600;
+            color: #4254c5;
+            min-width: 46px;
+            text-align: right;
+        }
+
+        .progress-toggle {
+            background: none;
+            border: none;
+            color: #4254c5;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .progress-toggle:hover {
+            color: #2f3a8b;
+        }
+
+        .progress-container {
+            background: #f5f7ff;
+            padding: 20px;
+            display: none;
+        }
+        
+        .progress-container.active[data-expanded="true"] {
+            display: block;
+        }
+        
+        .current-task {
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        
+        .progress-output {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            max-height: 300px;
+            overflow-y: auto;
+            line-height: 1.5;
+        }
+        
+        .progress-output .task-line {
+            color: #4ec9b0;
+        }
+        
+        .progress-output .play-line {
+            color: #569cd6;
+        }
+        
+        .progress-output .status-line {
+            color: #ce9178;
+        }
+        
+        .progress-output .error-line {
+            color: #f48771;
+        }
+        
+        .progress-output .output-line {
+            color: #d4d4d4;
+        }
+        
+        .credentials-container {
+            display: none;
+            margin-top: 20px;
+            background: #f9fbff;
+            border: 1px solid #dce4ff;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+        }
+        
+        .credential-card {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .credential-card h4 {
+            margin: 0 0 4px;
+            color: #3b4cc0;
+        }
+        
+        .credential-field {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: #fff;
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid #edf1ff;
+        }
+        
+        .credential-label {
+            font-weight: 600;
+            min-width: 100px;
+            color: #4f5dbb;
+        }
+        
+        .credential-value {
+            flex: 1;
+            font-family: 'Courier New', monospace;
+            background: #f3f6ff;
+            padding: 8px 12px;
+            border-radius: 4px;
+            color: #1f2a5a;
+            word-break: break-all;
+        }
+        
+        .copy-btn {
+            background: #667eea;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 14px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: background 0.2s ease;
+        }
+        
+        .copy-btn:hover {
+            background: #5566d3;
+        }
+        
+        .task-status-line {
+            padding: 8px 12px;
+            margin: 4px 0;
+            border-radius: 4px;
+            font-weight: 500;
+            border-left: 4px solid;
+        }
+        
+        .task-status-line.status-success {
+            background: rgba(76, 175, 80, 0.1);
+            border-color: #4caf50;
+            color: #2e7d32;
+        }
+        
+        .task-status-line.status-error {
+            background: rgba(244, 67, 54, 0.1);
+            border-color: #f44336;
+            color: #c62828;
+        }
+        
+        .task-status-line.status-skip {
+            background: rgba(158, 158, 158, 0.1);
+            border-color: #9e9e9e;
+            color: #616161;
+        }
+        
+        .task-status-line.status-pending {
+            background: rgba(255, 193, 7, 0.1);
+            border-color: #ffc107;
+            color: #f57c00;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 StackBill Ansible Playbook Executor</h1>
+        
+        <div class="playbook-grid">
+            <div class="playbook-card" onclick="openForm('mysql')">
+                <h2>🐬 MySQL</h2>
+                <p>Install and configure MySQL with replication support</p>
+            </div>
+            
+            <div class="playbook-card" onclick="openForm('mongodb')">
+                <h2>🍃 MongoDB</h2>
+                <p>Install and configure MongoDB replica set</p>
+            </div>
+            
+            <div class="playbook-card" onclick="openForm('nfs')">
+                <h2>📁 NFS Server</h2>
+                <p>Setup NFS server on Ubuntu</p>
+            </div>
+            
+            <div class="playbook-card" onclick="openForm('rabbitmq')">
+                <h2>🐇 RabbitMQ</h2>
+                <p>Install and configure RabbitMQ message broker</p>
+            </div>
+        </div>
+        
+        <!-- MySQL Form -->
+        <div id="mysql-form" class="form-container">
+            <div class="form-header">
+                <h2>MySQL Installation</h2>
+                <button class="close-btn" onclick="closeForm('mysql')">✕ Close</button>
+            </div>
+            <form onsubmit="executePlaybook(event, 'mysql')">
+                <div class="form-group">
+                    <label>Deployment Mode</label>
+                    <div class="mode-toggle">
+                        <label><input type="radio" name="mysql-mode" value="single" checked onchange="changeDeploymentMode('mysql','single')"> Single</label>
+                        <label><input type="radio" name="mysql-mode" value="cluster" onchange="changeDeploymentMode('mysql','cluster')"> Cluster</label>
+                    </div>
+                </div>
+                <div id="mysql-servers" class="server-list"></div>
+                <button type="button" class="add-server-btn" id="mysql-add-server" onclick="addServer('mysql')">+ Add Server</button>
+                
+                <div class="form-group">
+                    <label>Ansible User (optional, defaults to ubuntu)</label>
+                    <input type="text" id="mysql-ansible-user" placeholder="ubuntu">
+                </div>
+                
+                <button type="submit" class="submit-btn">🚀 Execute MySQL Playbook</button>
+            </form>
+            <div class="loading" id="mysql-loading">
+                <div class="spinner"></div>
+                <p>Executing playbook...</p>
+            </div>
+            <div class="progress-panel" id="mysql-progress-panel">
+                <div class="progress-summary" onclick="toggleProgressDetails('mysql')">
+                    <span class="progress-summary-text" id="mysql-progress-summary">Waiting to start</span>
+                    <div class="progress-summary-right">
+                        <div class="mini-progress">
+                            <div class="mini-progress-fill" id="mysql-progress-bar"></div>
+                        </div>
+                        <span class="mini-progress-label" id="mysql-progress-count">0/0</span>
+                        <button type="button" class="progress-toggle" onclick="event.stopPropagation(); toggleProgressDetails('mysql')">Details ▾</button>
+                    </div>
+                </div>
+                <div class="progress-container" id="mysql-progress" data-expanded="false">
+                    <div class="current-task" id="mysql-current-task">Initializing...</div>
+                    <div class="progress-output" id="mysql-output"></div>
+                </div>
+            </div>
+            <div class="credentials-container" id="mysql-credentials"></div>
+            <div class="result-container" id="mysql-result"></div>
+        </div>
+        
+        <!-- MongoDB Form -->
+        <div id="mongodb-form" class="form-container">
+            <div class="form-header">
+                <h2>MongoDB Installation</h2>
+                <button class="close-btn" onclick="closeForm('mongodb')">✕ Close</button>
+            </div>
+            <form onsubmit="executePlaybook(event, 'mongodb')">
+                <div class="form-group">
+                    <label>Deployment Mode</label>
+                    <div class="mode-toggle">
+                        <label><input type="radio" name="mongodb-mode" value="single" checked onchange="changeDeploymentMode('mongodb','single')"> Single</label>
+                        <label><input type="radio" name="mongodb-mode" value="cluster" onchange="changeDeploymentMode('mongodb','cluster')"> Cluster</label>
+                    </div>
+                </div>
+                <div id="mongodb-servers" class="server-list"></div>
+                <button type="button" class="add-server-btn" id="mongodb-add-server" onclick="addServer('mongodb')">+ Add Server</button>
+                
+                <div class="form-group">
+                    <label>Ansible User (optional, defaults to ubuntu)</label>
+                    <input type="text" id="mongodb-ansible-user" placeholder="ubuntu">
+                </div>
+                
+                <button type="submit" class="submit-btn">🚀 Execute MongoDB Playbook</button>
+            </form>
+            <div class="loading" id="mongodb-loading">
+                <div class="spinner"></div>
+                <p>Executing playbook...</p>
+            </div>
+            <div class="progress-panel" id="mongodb-progress-panel">
+                <div class="progress-summary" onclick="toggleProgressDetails('mongodb')">
+                    <span class="progress-summary-text" id="mongodb-progress-summary">Waiting to start</span>
+                    <div class="progress-summary-right">
+                        <div class="mini-progress">
+                            <div class="mini-progress-fill" id="mongodb-progress-bar"></div>
+                        </div>
+                        <span class="mini-progress-label" id="mongodb-progress-count">0/0</span>
+                        <button type="button" class="progress-toggle" onclick="event.stopPropagation(); toggleProgressDetails('mongodb')">Details ▾</button>
+                    </div>
+                </div>
+                <div class="progress-container" id="mongodb-progress" data-expanded="false">
+                    <div class="current-task" id="mongodb-current-task">Initializing...</div>
+                    <div class="progress-output" id="mongodb-output"></div>
+                </div>
+            </div>
+            <div class="credentials-container" id="mongodb-credentials"></div>
+            <div class="result-container" id="mongodb-result"></div>
+        </div>
+        
+        <!-- NFS Form -->
+        <div id="nfs-form" class="form-container">
+            <div class="form-header">
+                <h2>NFS Server Setup</h2>
+                <button class="close-btn" onclick="closeForm('nfs')">✕ Close</button>
+            </div>
+            <form onsubmit="executePlaybook(event, 'nfs')">
+                <div id="nfs-servers" class="server-list"></div>
+                <button type="button" class="add-server-btn" onclick="addServer('nfs')">+ Add Server</button>
+                
+                <div class="form-group">
+                    <label>Ansible User (optional, defaults to ubuntu)</label>
+                    <input type="text" id="nfs-ansible-user" placeholder="ubuntu">
+                </div>
+                
+                <div class="form-group">
+                    <label>Disk Device (e.g., /dev/sdb1) *</label>
+                    <input type="text" id="nfs-disk-device" required placeholder="/dev/sdb1">
+                </div>
+                
+                <div class="form-group">
+                    <label>Client IP Range (e.g., 192.168.43.0/24) *</label>
+                    <input type="text" id="nfs-client-ip-range" required placeholder="192.168.43.0/24">
+                </div>
+                
+                <button type="submit" class="submit-btn">🚀 Execute NFS Playbook</button>
+            </form>
+            <div class="loading" id="nfs-loading">
+                <div class="spinner"></div>
+                <p>Executing playbook...</p>
+            </div>
+            <div class="progress-panel" id="nfs-progress-panel">
+                <div class="progress-summary" onclick="toggleProgressDetails('nfs')">
+                    <span class="progress-summary-text" id="nfs-progress-summary">Waiting to start</span>
+                    <div class="progress-summary-right">
+                        <div class="mini-progress">
+                            <div class="mini-progress-fill" id="nfs-progress-bar"></div>
+                        </div>
+                        <span class="mini-progress-label" id="nfs-progress-count">0/0</span>
+                        <button type="button" class="progress-toggle" onclick="event.stopPropagation(); toggleProgressDetails('nfs')">Details ▾</button>
+                    </div>
+                </div>
+                <div class="progress-container" id="nfs-progress" data-expanded="false">
+                    <div class="current-task" id="nfs-current-task">Initializing...</div>
+                    <div class="progress-output" id="nfs-output"></div>
+                </div>
+            </div>
+            <div class="credentials-container" id="nfs-credentials"></div>
+            <div class="result-container" id="nfs-result"></div>
+        </div>
+        
+        <!-- RabbitMQ Form -->
+        <div id="rabbitmq-form" class="form-container">
+            <div class="form-header">
+                <h2>RabbitMQ Installation</h2>
+                <button class="close-btn" onclick="closeForm('rabbitmq')">✕ Close</button>
+            </div>
+            <form onsubmit="executePlaybook(event, 'rabbitmq')">
+                <div id="rabbitmq-servers" class="server-list"></div>
+                <button type="button" class="add-server-btn" onclick="addServer('rabbitmq')">+ Add Server</button>
+                
+                <div class="form-group">
+                    <label>Ansible User (optional, defaults to ubuntu)</label>
+                    <input type="text" id="rabbitmq-ansible-user" placeholder="ubuntu">
+                </div>
+                
+                <button type="submit" class="submit-btn">🚀 Execute RabbitMQ Playbook</button>
+            </form>
+            <div class="loading" id="rabbitmq-loading">
+                <div class="spinner"></div>
+                <p>Executing playbook...</p>
+            </div>
+            <div class="progress-panel" id="rabbitmq-progress-panel">
+                <div class="progress-summary" onclick="toggleProgressDetails('rabbitmq')">
+                    <span class="progress-summary-text" id="rabbitmq-progress-summary">Waiting to start</span>
+                    <div class="progress-summary-right">
+                        <div class="mini-progress">
+                            <div class="mini-progress-fill" id="rabbitmq-progress-bar"></div>
+                        </div>
+                        <span class="mini-progress-label" id="rabbitmq-progress-count">0/0</span>
+                        <button type="button" class="progress-toggle" onclick="event.stopPropagation(); toggleProgressDetails('rabbitmq')">Details ▾</button>
+                    </div>
+                </div>
+                <div class="progress-container" id="rabbitmq-progress" data-expanded="false">
+                    <div class="current-task" id="rabbitmq-current-task">Initializing...</div>
+                    <div class="progress-output" id="rabbitmq-output"></div>
+                </div>
+            </div>
+            <div class="credentials-container" id="rabbitmq-credentials"></div>
+            <div class="result-container" id="rabbitmq-result"></div>
+        </div>
+    </div>
+    
+    <script>
+        let serverCounters = {
+            mysql: 0,
+            mongodb: 0,
+            nfs: 0,
+            rabbitmq: 0
+        };
+        
+        const progressState = {};
+        const liveCredentials = {};
+        const deploymentModes = {
+            mysql: 'single',
+            mongodb: 'single'
+        };
+
+        function openForm(playbookType) {
+            document.getElementById(`${playbookType}-form`).classList.add('active');
+            if (document.getElementById(`${playbookType}-servers`).children.length === 0) {
+                addServer(playbookType);
+            }
+        }
+        
+        function closeForm(playbookType) {
+            document.getElementById(`${playbookType}-form`).classList.remove('active');
+            document.getElementById(`${playbookType}-result`).classList.remove('success', 'error');
+            document.getElementById(`${playbookType}-result`).style.display = 'none';
+        }
+        
+        function addServer(playbookType) {
+            const container = document.getElementById(`${playbookType}-servers`);
+            const mode = deploymentModes[playbookType] || 'single';
+
+            if (mode === 'single' && container.children.length >= 1) {
+                return;
+            }
+
+            const serverId = serverCounters[playbookType]++;
+            
+            const serverDiv = document.createElement('div');
+            serverDiv.className = 'server-item';
+            serverDiv.id = `server-${playbookType}-${serverId}`;
+            
+            let roleSelect = '';
+            if (playbookType === 'mysql') {
+                if (mode === 'cluster') {
+                    roleSelect = `
+                    <div class="form-group">
+                        <label>Role</label>
+                        <select name="role" required>
+                            <option value="primary">Primary</option>
+                            <option value="secondary">Secondary</option>
+                        </select>
+                    </div>
+                `;
+                } else {
+                    roleSelect = `<input type="hidden" name="role" value="primary">`;
+                }
+            } else if (playbookType === 'mongodb') {
+                if (mode === 'cluster') {
+                    roleSelect = `
+                    <div class="form-group">
+                        <label>Role</label>
+                        <select name="role" required>
+                            <option value="primary">Primary</option>
+                            <option value="secondary">Secondary</option>
+                            <option value="arbiter">Arbiter</option>
+                        </select>
+                    </div>
+                `;
+                } else {
+                    roleSelect = `<input type="hidden" name="role" value="primary">`;
+                }
+            }
+            
+            serverDiv.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <div style="flex: 1;">
+                        ${roleSelect}
+                        <div class="form-group">
+                            <label>Hostname/IP *</label>
+                            <input type="text" name="hostname" required placeholder="10.0.0.20">
+                        </div>
+                        <div class="form-group">
+                            <label>SSH Port *</label>
+                            <input type="number" name="ssh_port" required value="22" min="1" max="65535">
+                        </div>
+                        <div class="form-group">
+                            <label>SSH Password *</label>
+                            <input type="password" name="password" required placeholder="Enter SSH password">
+                        </div>
+                    </div>
+                    <button type="button" class="remove-server-btn" onclick="removeServer('${playbookType}', ${serverId})">Remove</button>
+                </div>
+            `;
+            
+            container.appendChild(serverDiv);
+            updateAddServerButton(playbookType);
+        }
+        
+        function removeServer(playbookType, serverId) {
+            const serverDiv = document.getElementById(`server-${playbookType}-${serverId}`);
+            if (serverDiv) {
+                serverDiv.remove();
+            }
+            updateAddServerButton(playbookType);
+        }
+
+        async function executePlaybook(event, playbookType) {
+            event.preventDefault();
+            
+            const form = event.target;
+            const loading = document.getElementById(`${playbookType}-loading`);
+            const progressPanel = document.getElementById(`${playbookType}-progress-panel`);
+            const progressSummary = document.getElementById(`${playbookType}-progress-summary`);
+            const progressToggleBtn = progressPanel ? progressPanel.querySelector('.progress-toggle') : null;
+            const progress = document.getElementById(`${playbookType}-progress`);
+            const progressOutput = document.getElementById(`${playbookType}-output`);
+            const currentTask = document.getElementById(`${playbookType}-current-task`);
+            const result = document.getElementById(`${playbookType}-result`);
+            const credentialsContainer = document.getElementById(`${playbookType}-credentials`);
+            const submitBtn = form.querySelector('.submit-btn');
+            
+            // Collect server data
+            const serverItems = document.querySelectorAll(`#${playbookType}-servers .server-item`);
+            const servers = [];
+            
+            serverItems.forEach(item => {
+                const hostname = item.querySelector('[name="hostname"]').value;
+                const ssh_port = item.querySelector('[name="ssh_port"]').value;
+                const password = item.querySelector('[name="password"]').value;
+                const role = item.querySelector('[name="role"]')?.value;
+                const ansibleUser = document.getElementById(`${playbookType}-ansible-user`).value;
+                
+                servers.push({
+                    hostname,
+                    ssh_port: parseInt(ssh_port),
+                    password,
+                    role,
+                    ansible_user: ansibleUser || undefined
+                });
+            });
+            
+            // Collect variables
+            const variables = {};
+            if (playbookType === 'mysql' || playbookType === 'mongodb') {
+                variables.deployment_mode = deploymentModes[playbookType] || 'single';
+            }
+            if (playbookType === 'nfs') {
+                variables.disk_device = document.getElementById('nfs-disk-device').value;
+                variables.client_ip_range = document.getElementById('nfs-client-ip-range').value;
+            }
+            
+            if (!validateDeployment(playbookType, deploymentModes[playbookType], servers, result, loading, progressPanel, progress, submitBtn)) {
+                return;
+            }
+
+            // Show loading and progress
+            loading.classList.add('active');
+            progressPanel.style.display = 'block';
+            progressSummary.textContent = 'Starting...';
+            if (progressToggleBtn) {
+                progressToggleBtn.textContent = 'Details ▾';
+            }
+            progress.classList.add('active');
+            progress.dataset.expanded = 'false';
+            progress.style.display = 'none';
+            progressOutput.innerHTML = '';
+            currentTask.textContent = 'Initializing playbook execution...';
+            result.style.display = 'none';
+            credentialsContainer.innerHTML = '';
+            credentialsContainer.style.display = 'none';
+            liveCredentials[playbookType] = {};
+            submitBtn.disabled = true;
+            resetProgressState(playbookType);
+            ensureProgressState(playbookType).orderedTasks = [];
+            
+            try {
+                // Use fetch with streaming
+                const response = await fetch(`/api/playbook/${playbookType}?stream=true`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/event-stream'
+                    },
+                    body: JSON.stringify({ servers, variables })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.substring(6));
+                                handleStreamEvent(data, playbookType, progressOutput, currentTask);
+                            } catch (e) {
+                                console.error('Error parsing SSE data:', e);
+                            }
+                        }
+                    }
+                }
+                
+                // Handle any remaining buffer
+                if (buffer.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(buffer.substring(6));
+                        handleStreamEvent(data, playbookType, progressOutput, currentTask);
+                    } catch (e) {
+                        console.error('Error parsing SSE data:', e);
+                    }
+                }
+                
+            } catch (error) {
+                loading.classList.remove('active');
+                progress.classList.remove('active');
+                submitBtn.disabled = false;
+                
+                result.className = 'result-container error';
+                result.style.display = 'block';
+                result.innerHTML = `
+                    <h3>❌ Error</h3>
+                    <pre>${error.message}</pre>
+                `;
+            }
+        }
+        
+        function handleStreamEvent(data, playbookType, outputEl, taskEl) {
+            const addTaskStatus = (taskName, status, message = '') => {
+                const line = document.createElement('div');
+                line.className = 'task-status-line';
+                
+                let icon = '⏳';
+                let statusClass = 'status-pending';
+                if (status === 'ok' || status === 'changed') {
+                    icon = '✅';
+                    statusClass = 'status-success';
+                } else if (status === 'fatal' || status === 'failed') {
+                    icon = '❌';
+                    statusClass = 'status-error';
+                } else if (status === 'skipping') {
+                    icon = '⏭️';
+                    statusClass = 'status-skip';
+                }
+                
+                line.className = `task-status-line ${statusClass}`;
+                const statusText = status === 'ok' ? 'Ok' : status === 'changed' ? 'Changed' : status === 'fatal' ? 'Failed' : status === 'skipping' ? 'Skipped' : status;
+                line.textContent = `${icon} ${taskName} - ${statusText}${message ? ': ' + message : ''}`;
+                outputEl.appendChild(line);
+                outputEl.scrollTop = outputEl.scrollHeight;
+            };
+            
+            if (data.type === 'task_result') {
+                // Show task result with status
+                addTaskStatus(data.task || 'Unknown task', data.status, data.message);
+                registerTask(playbookType, data.task, data.lineTaskIndex);
+                finalizeTask(playbookType, data.task, data.status);
+                updateProgressSummary(playbookType, `${capitalizeStatus(data.status)} - ${data.task || 'Task'}`);
+                if (data.status === 'ok' || data.status === 'changed') {
+                    taskEl.textContent = `✅ ${data.task || 'Current task'}`;
+                } else if (data.status === 'fatal') {
+                    taskEl.textContent = `❌ ${data.task || 'Current task'} - Failed`;
+                }
+                if (data.credentialUpdate && data.credentialUpdate.service === playbookType) {
+                    liveCredentials[playbookType] = {
+                        ...(liveCredentials[playbookType] || {}),
+                        ...data.credentialUpdate.data
+                    };
+                    renderCredentials(playbookType, liveCredentials[playbookType]);
+                }
+            } else if (data.type === 'task') {
+                // Task started
+                registerTask(playbookType, data.task);
+                taskEl.textContent = `⏳ ${data.task}`;
+                updateProgressSummary(playbookType, `Running: ${data.task}`);
+            } else if (data.type === 'play') {
+                taskEl.textContent = `🎬 Running play: ${data.play}`;
+                updateProgressSummary(playbookType, `Play: ${data.play}`);
+            } else if (data.type === 'error') {
+                addTaskStatus('Error', 'fatal', data.line);
+                updateProgressSummary(playbookType, 'Error encountered');
+            } else if (data.type === 'complete') {
+                const loading = document.getElementById(`${playbookType}-loading`);
+                const progress = document.getElementById(`${playbookType}-progress`);
+                const result = document.getElementById(`${playbookType}-result`);
+                const submitBtn = document.querySelector(`#${playbookType}-form .submit-btn`);
+                
+                loading.classList.remove('active');
+                progress.style.display = progress.dataset.expanded === 'true' ? 'block' : 'none';
+                submitBtn.disabled = false;
+                if (data.credentials && data.credentials[playbookType]) {
+                    liveCredentials[playbookType] = data.credentials[playbookType];
+                }
+                renderCredentials(playbookType, liveCredentials[playbookType]);
+                
+                if (data.success) {
+                    taskEl.textContent = '✅ Playbook completed successfully!';
+                    updateProgressSummary(playbookType, 'Completed successfully');
+                    result.className = 'result-container success';
+                    result.style.display = 'block';
+                    result.innerHTML = `
+                        <h3>✅ Playbook executed successfully!</h3>
+                        <p>Review the task list above for detailed status.</p>
+                    `;
+                } else {
+                    taskEl.textContent = '❌ Playbook execution failed';
+                    updateProgressSummary(playbookType, 'Failed — review details');
+                    result.className = 'result-container error';
+                    result.style.display = 'block';
+                    result.innerHTML = `
+                        <h3>❌ Playbook execution failed</h3>
+                        <p>${data.error || 'One or more tasks failed. Check the status list above.'}</p>
+                    `;
+                }
+            }
+        }
+
+        function updateProgressSummary(playbookType, text) {
+            const summary = document.getElementById(`${playbookType}-progress-summary`);
+            if (summary) {
+                summary.textContent = text;
+            }
+            updateProgressBar(playbookType);
+        }
+
+        function toggleProgressDetails(playbookType) {
+            const progress = document.getElementById(`${playbookType}-progress`);
+            const panel = document.getElementById(`${playbookType}-progress-panel`);
+            if (!progress || !panel) return;
+
+            const toggleButton = panel.querySelector('.progress-toggle');
+            const expanded = progress.dataset.expanded === 'true';
+            progress.dataset.expanded = expanded ? 'false' : 'true';
+            if (progress.classList.contains('active') && !expanded) {
+                progress.style.display = 'block';
+            } else if (progress.classList.contains('active') && expanded) {
+                progress.style.display = 'none';
+            }
+            if (toggleButton) {
+                toggleButton.textContent = progress.dataset.expanded === 'true' ? 'Hide details ▴' : 'Details ▾';
+            }
+        }
+
+        function capitalizeStatus(status) {
+            if (!status) return '';
+            const map = {
+                ok: 'Completed',
+                changed: 'Changed',
+                fatal: 'Failed',
+                failed: 'Failed',
+                skipping: 'Skipped'
+            };
+            const lower = status.toLowerCase();
+            return map[lower] || status.charAt(0).toUpperCase() + status.slice(1);
+        }
+
+        function ensureProgressState(playbookType) {
+            if (!progressState[playbookType]) {
+                progressState[playbookType] = { taskStatus: {}, orderedTasks: [] };
+            }
+            return progressState[playbookType];
+        }
+
+        function resetProgressState(playbookType) {
+            progressState[playbookType] = { taskStatus: {}, orderedTasks: [] };
+            updateProgressBar(playbookType);
+        }
+
+        function registerTask(playbookType, taskName) {
+            if (!taskName) return;
+            const state = ensureProgressState(playbookType);
+            if (!state.taskStatus[taskName]) {
+                state.taskStatus[taskName] = 'pending';
+                state.orderedTasks.push(taskName);
+                updateProgressBar(playbookType);
+            }
+        }
+
+        function finalizeTask(playbookType, taskName, status) {
+            if (!taskName) return;
+            const state = ensureProgressState(playbookType);
+            state.taskStatus[taskName] = status || 'pending';
+            updateProgressBar(playbookType);
+        }
+
+        function updateProgressBar(playbookType) {
+            const state = ensureProgressState(playbookType);
+            const tasks = state.orderedTasks.length > 0 ? state.orderedTasks : Object.keys(state.taskStatus);
+            const total = tasks.length;
+            const completedStatuses = ['ok', 'changed', 'skipping'];
+            let completed = 0;
+            tasks.forEach(task => {
+                if (completedStatuses.includes(state.taskStatus[task])) {
+                    completed += 1;
+                }
+            });
+            const failed = tasks.some(task => ['fatal', 'failed'].includes(state.taskStatus[task]));
+            const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+            const bar = document.getElementById(`${playbookType}-progress-bar`);
+            const label = document.getElementById(`${playbookType}-progress-count`);
+            if (bar) {
+                bar.style.width = `${percent}%`;
+                bar.style.background = failed
+                    ? 'linear-gradient(90deg,#f5576c,#f093fb)'
+                    : 'linear-gradient(90deg,#667eea,#764ba2)';
+            }
+            if (label) {
+                label.textContent = total === 0
+                    ? 'Preparing'
+                    : failed ? 'Attention required' : completed === total ? 'Complete' : 'In progress';
+            }
+        }
+
+        function renderCredentials(playbookType, credentials) {
+            const container = document.getElementById(`${playbookType}-credentials`);
+            if (!container) return;
+
+            container.innerHTML = '';
+            container.style.display = 'none';
+
+            if (credentials === null || credentials === undefined) {
+                return;
+            }
+
+            let normalized = credentials;
+            if (typeof normalized === 'string') {
+                normalized = { path: normalized };
+            } else if (Array.isArray(normalized)) {
+                normalized = { value: normalized.join('') };
+            } else if (typeof normalized !== 'object') {
+                return;
+            }
+
+            const keys = Object.keys(normalized);
+            if (keys.length === 0) {
+                return;
+            }
+
+            const labelMap = {
+                username: 'Username',
+                password: 'Password',
+                path: 'Stored At'
+            };
+
+            const card = document.createElement('div');
+            card.className = 'credential-card';
+
+            const heading = document.createElement('h4');
+            heading.textContent = 'Generated Credentials';
+            card.appendChild(heading);
+
+            let hasValues = false;
+            const labelOrder = ['username', 'password', 'path'];
+            const orderedEntries = Object.entries(normalized).sort((a, b) => {
+                const ia = labelOrder.indexOf(a[0]);
+                const ib = labelOrder.indexOf(b[0]);
+                const orderA = ia === -1 ? labelOrder.length + a[0].localeCompare('') : ia;
+                const orderB = ib === -1 ? labelOrder.length + b[0].localeCompare('') : ib;
+                return orderA - orderB;
+            });
+            orderedEntries.forEach(([key, value]) => {
+                if (value === undefined || value === null || value === '') return;
+                const field = document.createElement('div');
+                field.className = 'credential-field';
+
+                const label = document.createElement('span');
+                label.className = 'credential-label';
+                label.textContent = labelMap[key] || key;
+
+                const content = document.createElement('span');
+                content.className = 'credential-value';
+                content.textContent = value;
+
+                const copyBtn = document.createElement('button');
+                copyBtn.type = 'button';
+                copyBtn.className = 'copy-btn';
+                copyBtn.textContent = 'Copy';
+                copyBtn.addEventListener('click', () => handleCopy(value, copyBtn));
+
+                field.appendChild(label);
+                field.appendChild(content);
+                field.appendChild(copyBtn);
+                card.appendChild(field);
+                hasValues = true;
+            });
+
+            if (hasValues) {
+                container.appendChild(card);
+                container.style.display = 'block';
+            }
+        }
+
+        function handleCopy(text, button) {
+            if (!navigator.clipboard) {
+                return;
+            }
+            const original = button.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                button.textContent = 'Copied!';
+                button.disabled = true;
+                setTimeout(() => {
+                    button.textContent = original;
+                    button.disabled = false;
+                }, 1500);
+            }).catch(() => {
+                button.textContent = 'Error';
+                setTimeout(() => {
+                    button.textContent = original;
+                }, 1500);
+            });
+        }
+
+        function changeDeploymentMode(playbookType, mode) {
+            deploymentModes[playbookType] = mode;
+            const container = document.getElementById(`${playbookType}-servers`);
+            container.innerHTML = '';
+            serverCounters[playbookType] = 0;
+            addServer(playbookType);
+            updateAddServerButton(playbookType);
+        }
+
+        function updateAddServerButton(playbookType) {
+            const button = document.getElementById(`${playbookType}-add-server`);
+            if (!button) return;
+            const mode = deploymentModes[playbookType] || 'single';
+            const container = document.getElementById(`${playbookType}-servers`);
+            if (mode === 'single') {
+                button.disabled = (container.children.length >= 1);
+                button.style.opacity = button.disabled ? 0.6 : 1;
+            } else {
+                button.disabled = false;
+                button.style.opacity = 1;
+            }
+        }
+
+        function validateDeployment(playbookType, mode, servers, resultEl, loadingEl, progressPanel, progressEl, submitBtn) {
+            if (playbookType === 'mysql' || playbookType === 'mongodb') {
+                if (mode === 'single') {
+                    if (servers.length !== 1) {
+                        showValidationError(resultEl, loadingEl, progressPanel, progressEl, submitBtn, 'Single mode requires exactly one server.');
+                        return false;
+                    }
+                } else {
+                    const hasPrimary = servers.some(s => s.role === 'primary');
+                    const hasSecondary = servers.some(s => s.role === 'secondary');
+                    if (!hasPrimary || !hasSecondary) {
+                        showValidationError(resultEl, loadingEl, progressPanel, progressEl, submitBtn, 'Cluster mode needs at least one primary and one secondary server.');
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        function showValidationError(resultEl, loadingEl, progressPanel, progressEl, submitBtn, message) {
+            if (loadingEl) loadingEl.classList.remove('active');
+            if (progressPanel) progressPanel.style.display = 'none';
+            if (progressEl) progressEl.classList.remove('active');
+            if (submitBtn) submitBtn.disabled = false;
+            if (resultEl) {
+                resultEl.className = 'result-container error';
+                resultEl.style.display = 'block';
+                resultEl.innerHTML = `
+                    <h3>❌ Validation error</h3>
+                    <p>${message}</p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
+

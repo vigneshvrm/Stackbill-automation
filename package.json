@@ -1,0 +1,29 @@
+{
+  "name": "stackbill-ansible-api",
+  "version": "1.0.0",
+  "description": "Lightweight API server for executing Ansible playbooks with dynamic server configurations",
+  "main": "backend/api-server.js",
+  "scripts": {
+    "start": "node backend/api-server.js",
+    "dev": "nodemon backend/api-server.js",
+    "verify": "node backend/verify-setup.js"
+  },
+  "keywords": [
+    "ansible",
+    "api",
+    "automation",
+    "n8n"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
+

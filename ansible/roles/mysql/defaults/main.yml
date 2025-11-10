@@ -1,0 +1,23 @@
+---
+deployment_mode: "single"   # "single" or "cluster"
+mysql_credentials_path: "/tmp/mysql_credentials.txt"
+
+mysql_root_user: "root"
+mysql_root_password: ""
+
+mysql_user: ""
+mysql_password: ""
+
+replication_user: "repuser"
+replication_password: ""
+
+mysql_port: 3306
+mysql_bind_address: "0.0.0.0"
+
+replication_role: "master"  # master or slave
+slave_master_ip: ""
+
+wolf_schema: "wolf"
+config_schema: "configuration"
+
+mysql_conf_path: "/etc/mysql/mysql.conf.d/mysqld.cnf"

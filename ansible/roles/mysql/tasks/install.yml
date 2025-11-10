@@ -1,0 +1,12 @@
+---
+- name: Update apt cache and install MySQL
+  apt:
+    name: mysql-server
+    state: present
+    update_cache: yes
+
+- name: Enable and start MySQL service
+  systemd:
+    name: mysql
+    enabled: true
+    state: started

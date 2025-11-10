@@ -1,0 +1,17 @@
+---
+- name: Ensure admin credentials are generated and stored
+  import_tasks: generate_credentials.yml
+
+- name: Include install tasks
+  import_tasks: install.yml
+
+- name: Include configure tasks
+  import_tasks: configure.yml
+
+- name: Ensure keyfile exists on primary and distribute to others (cluster only)
+  import_tasks: distribute_keyfile.yml
+  when: deployment_mode == "cluster"
+
+- name: Initialize replication set (cluster only, primary only)
+  import_tasks: repl_init.yml
+  when: deployment_mode == "cluster" and "'primary' in group_names"
