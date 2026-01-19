@@ -17,6 +17,19 @@
     ssl_key_path: "/etc/ssl/stackbill/privkey.pem"
 
   pre_tasks:
+    - name: Set custom hostname if provided
+      hostname:
+        name: "{{ custom_hostname }}"
+      when: custom_hostname is defined and custom_hostname | length > 0
+
+    - name: Update /etc/hosts with hostname
+      lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1'
+        line: "127.0.1.1 {{ custom_hostname }}"
+        state: present
+      when: custom_hostname is defined and custom_hostname | length > 0
+
     - name: Verify Ubuntu version
       assert:
         that:

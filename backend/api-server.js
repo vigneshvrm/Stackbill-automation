@@ -209,6 +209,11 @@ async function generateInventory(servers, playbookType) {
       }
     }
 
+    // Add custom hostname if server name is provided
+    if (server.name && server.name.trim()) {
+      line += ` custom_hostname=${server.name.trim()}`;
+    }
+
     return line;
   };
 

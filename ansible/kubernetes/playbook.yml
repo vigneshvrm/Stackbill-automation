@@ -11,6 +11,20 @@
     k8s_version: "{{ kubernetes_version | default('1.30') }}"
     load_balancer_ip: "{{ lb_ip | default(hostvars[groups['master'][0]]['ansible_host']) }}"
 
+  pre_tasks:
+    - name: Set custom hostname if provided
+      hostname:
+        name: "{{ custom_hostname }}"
+      when: custom_hostname is defined and custom_hostname | length > 0
+
+    - name: Update /etc/hosts with hostname
+      lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1'
+        line: "127.0.1.1 {{ custom_hostname }}"
+        state: present
+      when: custom_hostname is defined and custom_hostname | length > 0
+
   tasks:
     - name: Verify Ubuntu version
       ansible.builtin.assert:

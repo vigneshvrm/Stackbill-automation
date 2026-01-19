@@ -1,0 +1,26 @@
+# Common task to set hostname if custom_hostname is provided
+# Include this in pre_tasks of any playbook that needs hostname configuration
+
+- name: Set custom hostname
+  hostname:
+    name: "{{ custom_hostname }}"
+  when: custom_hostname is defined and custom_hostname | length > 0
+  become: yes
+
+- name: Update /etc/hosts with new hostname
+  lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1'
+    line: "127.0.1.1 {{ custom_hostname }}"
+    state: present
+  when: custom_hostname is defined and custom_hostname | length > 0
+  become: yes
+
+- name: Ensure hostname is in /etc/hosts for localhost
+  lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.0\.1.*localhost'
+    line: "127.0.0.1 localhost {{ custom_hostname }}"
+    state: present
+  when: custom_hostname is defined and custom_hostname | length > 0
+  become: yes
