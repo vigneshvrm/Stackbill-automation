@@ -1,0 +1,65 @@
+---
+- name: Verify Ubuntu version
+  assert:
+    that:
+      - ansible_distribution == "Ubuntu"
+      - ansible_distribution_version is version('22.04', '>=')
+    fail_msg: "This playbook requires Ubuntu 22.04 or later"
+    success_msg: "OS verification passed: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+- name: Install prerequisites and NFS client
+  apt:
+    name:
+      - gnupg
+      - curl
+      - sshpass
+      - nfs-common
+    state: present
+    update_cache: yes
+
+- name: Ensure keyring directory exists
+  file:
+    path: "{{ mongodb_keyring_path | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: Download MongoDB GPG key
+  get_url:
+    url: "{{ mongodb_key_url }}"
+    dest: "/tmp/mongodb-server-7.0.asc"
+
+- name: Dearmor key to keyring
+  command: "gpg --dearmor --yes --output {{ mongodb_keyring_path }} /tmp/mongodb-server-7.0.asc"
+  args:
+    creates: "{{ mongodb_keyring_path }}"
+
+- name: Add apt repo
+  copy:
+    dest: "/etc/apt/sources.list.d/mongodb-org-7.0.list"
+    content: "{{ mongodb_repo_line }}\n"
+
+- name: Install MongoDB packages
+  apt:
+    name: "{{ mongodb_packages }}"
+    state: present
+    update_cache: yes
+
+- name: Hold MongoDB packages
+  shell: "apt-mark hold {{ item }}"
+  loop:
+    - mongodb-org
+    - mongodb-org-server
+    - mongodb-org-database
+    - mongodb-org-mongos
+    - mongodb-org-tools
+  ignore_errors: true
+
+- name: Ensure mongod enabled and started
+  systemd:
+    name: mongod
+    enabled: true
+    state: started
+
+- name: Display NFS client installation status
+  debug:
+    msg: "NFS client (nfs-common) installed for StackBill file storage access"

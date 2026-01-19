@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StackBill Settings - Global Configuration</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <style>
+        /* Page-specific styles only */
+        .setting-input-wrapper {
+            display: flex;
+            gap: var(--space-2);
+        }
+
+        .setting-input.modified {
+            border-color: var(--color-warning-500);
+            background: var(--color-warning-50);
+        }
+
+        /* Boolean toggle style */
+        .toggle-label {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            cursor: pointer;
+            padding: var(--space-2) var(--space-4);
+            border-radius: var(--radius-md);
+            border: 2px solid var(--color-border);
+            background: var(--color-bg-card);
+            transition: all var(--transition-base);
+        }
+
+        .toggle-label.enabled {
+            border-color: var(--color-success-500);
+            background: var(--color-success-50);
+        }
+
+        .toggle-label input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: var(--color-success-500);
+        }
+
+        .toggle-text {
+            font-weight: var(--font-weight-medium);
+            color: var(--color-text-muted);
+        }
+
+        .toggle-label.enabled .toggle-text {
+            color: var(--color-success-600);
+        }
+
+        /* Add setting section */
+        .add-setting-section {
+            background: var(--color-bg-card);
+            border-radius: var(--radius-xl);
+            padding: var(--space-6);
+            margin-bottom: var(--space-6);
+            box-shadow: var(--shadow-md);
+            border: 2px dashed var(--color-border);
+        }
+
+        .add-setting-header {
+            display: flex;
+            align-items: center;
+            gap: var(--space-3);
+            margin-bottom: var(--space-5);
+        }
+
+        .add-setting-title {
+            font-size: var(--font-size-lg);
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-text-secondary);
+        }
+
+        .add-setting-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-4);
+        }
+
+        .add-setting-form .full-width {
+            grid-column: 1 / -1;
+        }
+
+        /* Syntax box */
+        .syntax-box {
+            background: var(--color-gray-800);
+            color: var(--color-success-500);
+            padding: var(--space-3) var(--space-4);
+            border-radius: var(--radius-md);
+            font-family: var(--font-family-mono);
+            font-size: var(--font-size-sm);
+            margin-top: var(--space-2);
+            overflow-x: auto;
+        }
+
+        .syntax-label {
+            color: var(--color-gray-400);
+            font-size: var(--font-size-xs);
+            margin-bottom: var(--space-1);
+        }
+
+        @media (max-width: 767px) {
+            .add-setting-form {
+                grid-template-columns: 1fr;
+            }
+
+            .add-setting-form .full-width {
+                grid-column: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <div class="header-top">
+                <a href="/sessions.html" class="logo" aria-label="StackBill Settings - Back to Sessions">
+                    <div class="logo-icon">&#9881;</div>
+                    <span class="logo-text">StackBill Settings</span>
+                </a>
+                <nav class="header-nav" aria-label="Main navigation">
+                    <a href="/sessions.html" class="header-btn">
+                        <span>&#8592;</span>
+                        <span class="btn-text">Back to Sessions</span>
+                    </a>
+                    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" title="Toggle dark mode" tabindex="0">
+                        <div class="theme-toggle-track">
+                            <div class="theme-toggle-thumb">
+                                <span class="icon-sun">&#9728;</span>
+                                <span class="icon-moon">&#9790;</span>
+                            </div>
+                        </div>
+                    </button>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-container container-md">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">Global Configuration</h1>
+                <p class="page-subtitle">Manage deployment URLs and settings for all services</p>
+            </div>
+            <div class="page-actions">
+                <button class="btn btn-danger" onclick="showResetAllModal()" aria-haspopup="dialog">
+                    <span>&#8635;</span> Reset All to Defaults
+                </button>
+            </div>
+        </div>
+
+        <div id="settingsContainer" role="region" aria-label="Settings list" aria-live="polite">
+            <div class="loading">
+                <div class="spinner spinner-lg"></div>
+                <span class="loading-text">Loading settings...</span>
+            </div>
+        </div>
+    </main>
+
+    <!-- Reset All Modal -->
+    <div id="resetAllModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="resetAllModalTitle" aria-describedby="resetAllModalDesc">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title" id="resetAllModalTitle">
+                    <span>&#9888;</span> Reset All Settings?
+                </h2>
+                <button class="modal-close" onclick="hideResetAllModal()" aria-label="Close dialog">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="resetAllModalDesc" class="text-secondary">
+                    This will reset all settings to their default values. Any custom URLs or configurations will be replaced with the original defaults.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="hideResetAllModal()">Cancel</button>
+                <button class="btn btn-danger-solid" onclick="confirmResetAll()">Reset All</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" role="status" aria-live="polite">
+        <div id="toast" class="toast"></div>
+    </div>
+
+    <script>
+        // =====================================================
+        // THEME MANAGEMENT
+        // =====================================================
+        function initTheme() {
+            const savedTheme = localStorage.getItem('stackbill-theme');
+            if (savedTheme) {
+                document.documentElement.setAttribute('data-theme', savedTheme);
+            }
+        }
+
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('stackbill-theme', newTheme);
+        }
+
+        // Initialize theme on load
+        initTheme();
+
+        // =====================================================
+        // CATEGORY ICONS & DEFAULTS
+        // =====================================================
+        const categoryIcons = {
+            deployment: '&#9881;',
+            kubernetes: '&#9096;',
+            stackbill: '&#9881;',
+            mysql: '&#128451;',
+            mongodb: '&#127811;',
+            rabbitmq: '&#128048;',
+            nfs: '&#128193;',
+            kubectl: '&#9000;',
+            istio: '&#127759;',
+            helm: '&#9875;',
+            custom: '&#9998;',
+            general: '&#9881;'
+        };
+
+        const DEFAULT_SETTINGS = {
+            'auto_cleanup': {
+                category: 'deployment',
+                value: 'false',
+                description: 'Automatically remove server passwords from database after deployment completes',
+                type: 'boolean'
+            }
+        };
+
+        let settings = [];
+        let originalValues = {};
+
+        // =====================================================
+        // LOAD SETTINGS
+        // =====================================================
+        async function loadSettings() {
+            const container = document.getElementById('settingsContainer');
+
+            // Show loading state with skeleton
+            container.innerHTML = `
+                <div class="loading">
+                    <div class="spinner spinner-lg"></div>
+                    <span class="loading-text">Loading settings...</span>
+                </div>
+            `;
+
+            try {
+                const response = await fetch('/api/settings');
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (data.success) {
+                    settings = data.settings || [];
+                    settings.forEach(s => {
+                        originalValues[s.key] = s.value;
+                    });
+                    renderSettings();
+                } else {
+                    showToast('Failed to load settings: ' + (data.error || 'Unknown error'), 'error');
+                    showErrorState(container, data.error || 'Unknown error');
+                }
+            } catch (e) {
+                console.error('Failed to load settings:', e);
+                showToast('Failed to load settings', 'error');
+                showErrorState(container, e.message);
+            }
+        }
+
+        function showErrorState(container, errorMessage) {
+            container.innerHTML = `
+                <div class="error-state">
+                    <div class="error-state-icon">&#9888;</div>
+                    <h3 class="error-state-title">Failed to load settings</h3>
+                    <p class="error-state-message">Please check if the server is running and try again.</p>
+                    <p class="error-state-details">${escapeHtml(errorMessage)}</p>
+                    <button class="btn btn-primary" onclick="loadSettings()">
+                        <span>&#8635;</span> Retry
+                    </button>
+                </div>
+            `;
+        }
+
+        // =====================================================
+        // RENDER SETTINGS
+        // =====================================================
+        function renderSettings() {
+            const container = document.getElementById('settingsContainer');
+
+            if (!settings || settings.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">&#9881;</div>
+                        <h3 class="empty-state-title">No settings found</h3>
+                        <p class="empty-state-message">Settings will appear here when configured.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Group settings by category
+            const grouped = {};
+            settings.forEach(setting => {
+                const category = setting.category || 'general';
+                if (!grouped[category]) {
+                    grouped[category] = [];
+                }
+                grouped[category].push(setting);
+            });
+
+            const categoryOrder = ['deployment', 'kubernetes', 'stackbill', 'mysql', 'mongodb', 'rabbitmq', 'nfs', 'kubectl', 'istio', 'helm', 'custom', 'general'];
+
+            const sortedCategories = Object.keys(grouped).sort((a, b) => {
+                const aIndex = categoryOrder.indexOf(a);
+                const bIndex = categoryOrder.indexOf(b);
+                return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex);
+            });
+
+            container.innerHTML = sortedCategories.map(category => `
+                <section class="category-section" aria-labelledby="category-${category}">
+                    <div class="category-header">
+                        <div class="category-icon" aria-hidden="true">${categoryIcons[category] || categoryIcons.general}</div>
+                        <h2 class="category-title" id="category-${category}">${formatCategoryName(category)}</h2>
+                    </div>
+                    ${grouped[category].map(setting => renderSettingItem(setting)).join('')}
+                </section>
+            `).join('');
+
+            // Add input event listeners
+            document.querySelectorAll('.setting-input').forEach(input => {
+                input.addEventListener('input', handleInputChange);
+            });
+        }
+
+        function formatCategoryName(category) {
+            const names = {
+                deployment: 'Deployment Settings',
+                kubernetes: 'Kubernetes',
+                stackbill: 'StackBill / Helm Charts',
+                mysql: 'MySQL',
+                mongodb: 'MongoDB',
+                rabbitmq: 'RabbitMQ',
+                nfs: 'NFS Storage',
+                kubectl: 'Kubectl',
+                istio: 'Istio',
+                helm: 'Helm',
+                custom: 'Custom Settings',
+                general: 'General'
+            };
+            return names[category] || category.charAt(0).toUpperCase() + category.slice(1);
+        }
+
+        function renderSettingItem(setting) {
+            const isBooleanType = DEFAULT_SETTINGS[setting.key]?.type === 'boolean' ||
+                                  setting.value === 'true' || setting.value === 'false';
+
+            if (isBooleanType) {
+                const isChecked = setting.value === 'true' || setting.value === '1';
+                return `
+                    <article class="setting-item" data-key="${setting.key}">
+                        <div class="setting-header">
+                            <div class="setting-info">
+                                <span class="setting-key">${setting.key}</span>
+                            </div>
+                            <div class="setting-actions">
+                                <button class="btn btn-xs btn-ghost" onclick="resetSetting('${setting.key}')" title="Reset to default" aria-label="Reset ${setting.key} to default">
+                                    Reset
+                                </button>
+                            </div>
+                        </div>
+                        <p class="setting-description">${setting.description || 'No description'}</p>
+                        <div class="setting-value">
+                            <label class="toggle-label ${isChecked ? 'enabled' : ''}">
+                                <input type="checkbox"
+                                       id="input-${setting.key}"
+                                       ${isChecked ? 'checked' : ''}
+                                       data-key="${setting.key}"
+                                       data-original="${setting.value}"
+                                       onchange="saveBooleanSetting('${setting.key}', this.checked)"
+                                       aria-describedby="desc-${setting.key}">
+                                <span class="toggle-text">${isChecked ? 'Enabled' : 'Disabled'}</span>
+                            </label>
+                        </div>
+                    </article>
+                `;
+            }
+
+            return `
+                <article class="setting-item" data-key="${setting.key}">
+                    <div class="setting-header">
+                        <div class="setting-info">
+                            <span class="setting-key">${setting.key}</span>
+                        </div>
+                        <div class="setting-actions">
+                            <button class="btn btn-xs btn-primary" onclick="saveSetting('${setting.key}')" style="display: none;" id="save-${setting.key}" aria-label="Save ${setting.key}">
+                                Save
+                            </button>
+                            <button class="btn btn-xs btn-ghost" onclick="resetSetting('${setting.key}')" title="Reset to default" aria-label="Reset ${setting.key} to default">
+                                Reset
+                            </button>
+                            <button class="btn btn-xs btn-ghost text-error" onclick="deleteSetting('${setting.key}')" title="Delete setting" aria-label="Delete ${setting.key}">
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                    <p class="setting-description" id="desc-${setting.key}">${setting.description || 'No description'}</p>
+                    <div class="setting-input-wrapper">
+                        <input type="text"
+                               class="form-control form-control-mono setting-input"
+                               id="input-${setting.key}"
+                               value="${escapeHtml(setting.value)}"
+                               data-key="${setting.key}"
+                               data-original="${escapeHtml(setting.value)}"
+                               aria-describedby="desc-${setting.key}">
+                    </div>
+                </article>
+            `;
+        }
+
+        // =====================================================
+        // SETTING OPERATIONS
+        // =====================================================
+        async function saveBooleanSetting(key, checked) {
+            const value = checked ? 'true' : 'false';
+            const label = document.querySelector(`[data-key="${key}"]`).closest('.setting-item').querySelector('.toggle-label');
+            const textSpan = label.querySelector('.toggle-text');
+
+            try {
+                const response = await fetch(`/api/settings/${key}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    originalValues[key] = value;
+                    label.classList.toggle('enabled', checked);
+                    textSpan.textContent = checked ? 'Enabled' : 'Disabled';
+                    showToast(`${key} ${checked ? 'enabled' : 'disabled'}`, 'success');
+                } else {
+                    showToast('Failed to save setting', 'error');
+                    // Revert checkbox
+                    document.getElementById(`input-${key}`).checked = !checked;
+                }
+            } catch (e) {
+                console.error('Failed to save setting:', e);
+                showToast('Failed to save setting', 'error');
+                document.getElementById(`input-${key}`).checked = !checked;
+            }
+        }
+
+        function handleInputChange(e) {
+            const input = e.target;
+            const key = input.dataset.key;
+            const original = originalValues[key];
+            const current = input.value;
+            const saveBtn = document.getElementById(`save-${key}`);
+
+            if (current !== original) {
+                input.classList.add('modified');
+                if (saveBtn) saveBtn.style.display = 'inline-flex';
+            } else {
+                input.classList.remove('modified');
+                if (saveBtn) saveBtn.style.display = 'none';
+            }
+        }
+
+        async function saveSetting(key) {
+            const input = document.getElementById(`input-${key}`);
+            const value = input.value;
+            const saveBtn = document.getElementById(`save-${key}`);
+
+            // Show loading state
+            saveBtn.classList.add('btn-loading');
+
+            try {
+                const response = await fetch(`/api/settings/${key}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    originalValues[key] = value;
+                    input.classList.remove('modified');
+                    input.dataset.original = value;
+                    saveBtn.style.display = 'none';
+                    showToast('Setting saved successfully', 'success');
+                } else {
+                    showToast('Failed to save setting', 'error');
+                }
+            } catch (e) {
+                console.error('Failed to save setting:', e);
+                showToast('Failed to save setting', 'error');
+            } finally {
+                saveBtn.classList.remove('btn-loading');
+            }
+        }
+
+        async function resetSetting(key) {
+            try {
+                const response = await fetch(`/api/settings/${key}/reset`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showToast('Setting reset to default', 'success');
+                    loadSettings();
+                } else {
+                    showToast('Failed to reset setting', 'error');
+                }
+            } catch (e) {
+                console.error('Failed to reset setting:', e);
+                showToast('Failed to reset setting', 'error');
+            }
+        }
+
+        async function deleteSetting(key) {
+            if (!confirm(`Delete setting "${key}"? This cannot be undone.`)) return;
+
+            try {
+                const response = await fetch(`/api/settings/${key}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showToast('Setting deleted', 'success');
+                    loadSettings();
+                } else {
+                    showToast('Failed to delete setting', 'error');
+                }
+            } catch (e) {
+                console.error('Failed to delete setting:', e);
+                showToast('Failed to delete setting', 'error');
+            }
+        }
+
+        // =====================================================
+        // RESET ALL MODAL
+        // =====================================================
+        function showResetAllModal() {
+            const modal = document.getElementById('resetAllModal');
+            modal.classList.add('active');
+            modal.querySelector('.modal-close').focus();
+        }
+
+        function hideResetAllModal() {
+            document.getElementById('resetAllModal').classList.remove('active');
+        }
+
+        async function confirmResetAll() {
+            const confirmBtn = document.querySelector('#resetAllModal .btn-danger-solid');
+            confirmBtn.classList.add('btn-loading');
+
+            try {
+                const response = await fetch('/api/settings/reset-all', {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    hideResetAllModal();
+                    showToast('All settings reset to defaults', 'success');
+                    loadSettings();
+                } else {
+                    showToast('Failed to reset settings', 'error');
+                }
+            } catch (e) {
+                console.error('Failed to reset settings:', e);
+                showToast('Failed to reset settings', 'error');
+            } finally {
+                confirmBtn.classList.remove('btn-loading');
+            }
+        }
+
+        // =====================================================
+        // UTILITY FUNCTIONS
+        // =====================================================
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+
+            // Set icon based on type
+            const icons = {
+                success: '&#10004;',
+                error: '&#10006;',
+                warning: '&#9888;',
+                info: '&#8505;'
+            };
+
+            toast.innerHTML = `
+                <span class="toast-icon">${icons[type] || icons.info}</span>
+                <span class="toast-message">${escapeHtml(message)}</span>
+            `;
+            toast.className = `toast toast-${type} show`;
+
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // =====================================================
+        // KEYBOARD NAVIGATION
+        // =====================================================
+        document.addEventListener('keydown', (e) => {
+            // Escape closes modals
+            if (e.key === 'Escape') {
+                const activeModal = document.querySelector('.modal-backdrop.active');
+                if (activeModal) {
+                    activeModal.classList.remove('active');
+                }
+            }
+        });
+
+        // Close modals on backdrop click
+        document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+            backdrop.addEventListener('click', (e) => {
+                if (e.target === backdrop) {
+                    backdrop.classList.remove('active');
+                }
+            });
+        });
+
+        // =====================================================
+        // INITIALIZE
+        // =====================================================
+        loadSettings();
+    </script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+---
+- name: Install and configure MongoDB on all nodes
+  hosts: mongo
+  become: true
+  gather_facts: true
+  serial: 1
+  order: inventory
+  any_errors_fatal: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python | default('/usr/bin/python3') }}"
+  roles:
+    - role: ./role
+      vars:
+        deployment_mode: "{{ deployment_mode | default('single') }}"
+        skip_repl_init: true
+
+- name: Initialize replica set (cluster mode only)
+  hosts: primary
+  become: true
+  gather_facts: true
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python | default('/usr/bin/python3') }}"
+    deployment_mode: "{{ deployment_mode | default('single') }}"
+  tasks:
+    - name: Include role defaults to get variables
+      include_vars:
+        file: ./role/defaults/main.yml
+    
+    - name: Load MongoDB credentials from file
+      slurp:
+        src: "{{ mongodb_credentials_path }}"
+      register: creds_slurp
+      when: deployment_mode == 'cluster'
+    
+    - name: Parse MongoDB credentials
+      set_fact:
+        admin_user: "{{ (creds_slurp.content | b64decode | regex_search('MONGODB_ADMIN_USER=([A-Za-z0-9]+)', '\\1')) }}"
+        admin_password: "{{ (creds_slurp.content | b64decode | regex_search('MONGODB_ADMIN_PASSWORD=([A-Za-z0-9]+)', '\\1')) }}"
+      when: deployment_mode == 'cluster' and creds_slurp is defined
+    
+    - name: Import replica set initialization tasks
+      import_tasks: ./role/tasks/repl_init.yml
+      when: deployment_mode == 'cluster'

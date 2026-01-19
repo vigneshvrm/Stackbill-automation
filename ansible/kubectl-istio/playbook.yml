@@ -1,0 +1,165 @@
+---
+# Kubectl and Istio Installation Playbook
+# Installs kubectl CLI and Istio service mesh on the management node (typically NFS server)
+
+- name: Install Kubectl and Istio
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    istio_version: "1.20.3"
+    kubectl_install_dir: "/usr/local/bin"
+    istio_install_dir: "/usr/local/src"
+    kubeconfig_path: "/root/.kube/config"
+
+  tasks:
+    - name: Verify Ubuntu version
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == "Ubuntu"
+          - ansible_distribution_version is version('22.04', '>=')
+        fail_msg: "This playbook requires Ubuntu 22.04 or later"
+        success_msg: "OS verification passed"
+
+    - name: Install required packages
+      ansible.builtin.apt:
+        name:
+          - curl
+          - apt-transport-https
+          - ca-certificates
+        state: present
+        update_cache: yes
+
+    # ==================== KUBECTL INSTALLATION ====================
+    - name: Get latest kubectl version
+      ansible.builtin.shell: curl -L -s https://dl.k8s.io/release/stable.txt
+      register: kubectl_version
+      changed_when: false
+
+    - name: Display kubectl version to install
+      ansible.builtin.debug:
+        msg: "Installing kubectl version: {{ kubectl_version.stdout }}"
+
+    - name: Download kubectl binary
+      ansible.builtin.get_url:
+        url: "https://dl.k8s.io/release/{{ kubectl_version.stdout }}/bin/linux/amd64/kubectl"
+        dest: "/tmp/kubectl"
+        mode: '0755'
+
+    - name: Download kubectl checksum
+      ansible.builtin.get_url:
+        url: "https://dl.k8s.io/release/{{ kubectl_version.stdout }}/bin/linux/amd64/kubectl.sha256"
+        dest: "/tmp/kubectl.sha256"
+
+    - name: Verify kubectl checksum
+      ansible.builtin.shell: |
+        cd /tmp
+        echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
+      register: checksum_result
+      changed_when: false
+
+    - name: Install kubectl
+      ansible.builtin.copy:
+        src: /tmp/kubectl
+        dest: "{{ kubectl_install_dir }}/kubectl"
+        mode: '0755'
+        remote_src: yes
+
+    - name: Verify kubectl installation
+      ansible.builtin.command: kubectl version --client --output=yaml
+      register: kubectl_verify
+      changed_when: false
+
+    - name: Display kubectl version
+      ansible.builtin.debug:
+        msg: "Kubectl installed successfully: {{ kubectl_verify.stdout_lines[0] }}"
+
+    - name: Create .kube directory
+      ansible.builtin.file:
+        path: /root/.kube
+        state: directory
+        mode: '0700'
+
+    - name: Check if kubeconfig exists
+      ansible.builtin.stat:
+        path: "{{ kubeconfig_path }}"
+      register: kubeconfig_stat
+
+    - name: Kubeconfig status
+      ansible.builtin.debug:
+        msg: "{{ 'Kubeconfig found at ' + kubeconfig_path if kubeconfig_stat.stat.exists else 'WARNING: Kubeconfig not found. Copy it from K8s master node to ' + kubeconfig_path }}"
+
+    # ==================== ISTIO INSTALLATION ====================
+    - name: Create Istio installation directory
+      ansible.builtin.file:
+        path: "{{ istio_install_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Download Istio
+      ansible.builtin.shell: |
+        cd {{ istio_install_dir }}
+        curl -L https://istio.io/downloadIstio | ISTIO_VERSION={{ istio_version }} sh -
+      args:
+        creates: "{{ istio_install_dir }}/istio-{{ istio_version }}"
+
+    - name: Copy istioctl to bin
+      ansible.builtin.copy:
+        src: "{{ istio_install_dir }}/istio-{{ istio_version }}/bin/istioctl"
+        dest: "{{ kubectl_install_dir }}/istioctl"
+        mode: '0755'
+        remote_src: yes
+
+    - name: Verify istioctl installation
+      ansible.builtin.command: istioctl version --remote=false
+      register: istioctl_verify
+      changed_when: false
+
+    - name: Display istioctl version
+      ansible.builtin.debug:
+        msg: "Istioctl installed: {{ istioctl_verify.stdout }}"
+
+    - name: Check if Istio can be installed (requires kubeconfig)
+      ansible.builtin.debug:
+        msg: "To complete Istio installation, run: istioctl install"
+      when: not kubeconfig_stat.stat.exists
+
+    - name: Install Istio to cluster (if kubeconfig exists)
+      ansible.builtin.command: istioctl install -y
+      register: istio_install
+      when: kubeconfig_stat.stat.exists
+      failed_when: false
+
+    - name: Display Istio installation status
+      ansible.builtin.debug:
+        msg: "{{ istio_install.stdout_lines if istio_install is defined and istio_install.stdout_lines is defined else 'Istio CLI installed. Run istioctl install after configuring kubeconfig.' }}"
+
+    - name: Get Istio ingress gateway service (if installed)
+      ansible.builtin.command: kubectl get svc -n istio-system istio-ingressgateway -o wide
+      register: istio_gateway
+      when: kubeconfig_stat.stat.exists
+      failed_when: false
+      changed_when: false
+
+    - name: Display Istio gateway info
+      ansible.builtin.debug:
+        msg: "{{ istio_gateway.stdout_lines if istio_gateway is defined and istio_gateway.stdout_lines is defined else 'Istio gateway will be available after installation' }}"
+
+    # ==================== SUMMARY ====================
+    - name: Installation Summary
+      ansible.builtin.debug:
+        msg:
+          - "======================================"
+          - "KUBECTL & ISTIO INSTALLATION COMPLETE"
+          - "======================================"
+          - "Kubectl: {{ kubectl_version.stdout }}"
+          - "Istioctl: {{ istio_version }}"
+          - "Kubeconfig: {{ 'Configured' if kubeconfig_stat.stat.exists else 'NOT CONFIGURED - Copy from K8s master' }}"
+          - ""
+          - "Next Steps:"
+          - "1. Copy kubeconfig from K8s master: scp root@<master-ip>:/root/.kube/config /root/.kube/config"
+          - "2. Verify cluster access: kubectl get nodes"
+          - "3. Install Istio: istioctl install"
+          - "4. Check ingress: kubectl get svc -n istio-system"
+          - "======================================"

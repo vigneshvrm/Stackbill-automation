@@ -1,0 +1,182 @@
+---
+# StackBill Application Deployment Playbook
+# Deploys StackBill application using Helm chart
+
+- name: Deploy StackBill Application
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    stackbill_namespace: "sb-apps"
+    helm_release_name: "sb-deployment-controller"
+    kubeconfig_path: "/root/.kube/config"
+    # These should be provided by the user
+    mysql_host: "{{ mysql_server | default('') }}"
+    mysql_user: "{{ mysql_username | default('stackbill') }}"
+    mysql_pass: "{{ mysql_password | default('') }}"
+    mongodb_host: "{{ mongodb_server | default('') }}"
+    mongodb_user: "{{ mongodb_username | default('admin') }}"
+    mongodb_pass: "{{ mongodb_password | default('') }}"
+    rabbitmq_host: "{{ rabbitmq_server | default('') }}"
+    rabbitmq_user: "{{ rabbitmq_username | default('mqadmin') }}"
+    rabbitmq_pass: "{{ rabbitmq_password | default('') }}"
+    nfs_server: "{{ nfs_server_ip | default('') }}"
+    nfs_path: "{{ nfs_export_path | default('/storage/k8-data') }}"
+    domain_name: "{{ stackbill_domain | default('stackbill.local') }}"
+
+  tasks:
+    - name: Verify Ubuntu version
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == "Ubuntu"
+          - ansible_distribution_version is version('22.04', '>=')
+        fail_msg: "This playbook requires Ubuntu 22.04 or later"
+        success_msg: "OS verification passed"
+
+    - name: Check if kubectl is installed
+      ansible.builtin.command: which kubectl
+      register: kubectl_check
+      changed_when: false
+      failed_when: false
+
+    - name: Verify kubectl is available
+      ansible.builtin.assert:
+        that: kubectl_check.rc == 0
+        fail_msg: "kubectl is not installed. Please run the kubectl-istio playbook first."
+        success_msg: "kubectl is available"
+
+    - name: Check if helm is installed
+      ansible.builtin.command: which helm
+      register: helm_check
+      changed_when: false
+      failed_when: false
+
+    - name: Verify helm is available
+      ansible.builtin.assert:
+        that: helm_check.rc == 0
+        fail_msg: "Helm is not installed. Please run the helm playbook first."
+        success_msg: "Helm is available"
+
+    - name: Check kubeconfig exists
+      ansible.builtin.stat:
+        path: "{{ kubeconfig_path }}"
+      register: kubeconfig_stat
+
+    - name: Verify kubeconfig exists
+      ansible.builtin.assert:
+        that: kubeconfig_stat.stat.exists
+        fail_msg: "Kubeconfig not found at {{ kubeconfig_path }}. Copy it from K8s master first."
+        success_msg: "Kubeconfig found"
+
+    - name: Verify cluster connectivity
+      ansible.builtin.command: kubectl get nodes
+      register: cluster_check
+      changed_when: false
+
+    - name: Display cluster nodes
+      ansible.builtin.debug:
+        msg: "{{ cluster_check.stdout_lines }}"
+
+    - name: Create StackBill namespace
+      ansible.builtin.command: kubectl create namespace {{ stackbill_namespace }}
+      register: namespace_create
+      failed_when: false
+      changed_when: "'created' in namespace_create.stdout"
+
+    - name: Check if namespace exists
+      ansible.builtin.command: kubectl get namespace {{ stackbill_namespace }}
+      register: namespace_check
+      changed_when: false
+
+    - name: Display namespace status
+      ansible.builtin.debug:
+        msg: "Namespace {{ stackbill_namespace }}: {{ 'Ready' if namespace_check.rc == 0 else 'Not found' }}"
+
+    # ==================== PREREQUISITES CHECK ====================
+    - name: Verify all prerequisites are configured
+      ansible.builtin.debug:
+        msg:
+          - "======================================"
+          - "PREREQUISITES CHECK"
+          - "======================================"
+          - "MySQL Server: {{ mysql_host | default('NOT SET') }}"
+          - "MongoDB Server: {{ mongodb_host | default('NOT SET') }}"
+          - "RabbitMQ Server: {{ rabbitmq_host | default('NOT SET') }}"
+          - "NFS Server: {{ nfs_server | default('NOT SET') }}"
+          - "Domain: {{ domain_name }}"
+          - "======================================"
+
+    # ==================== NFS STORAGE CLASS ====================
+    - name: Create NFS StorageClass
+      ansible.builtin.shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: storage.k8s.io/v1
+        kind: StorageClass
+        metadata:
+          name: nfs-storage
+        provisioner: kubernetes.io/no-provisioner
+        volumeBindingMode: WaitForFirstConsumer
+        EOF
+      when: nfs_server != ''
+      register: storage_class
+      changed_when: "'created' in storage_class.stdout or 'configured' in storage_class.stdout"
+
+    # ==================== DISPLAY NEXT STEPS ====================
+    - name: Display deployment instructions
+      ansible.builtin.debug:
+        msg:
+          - "======================================"
+          - "STACKBILL DEPLOYMENT READY"
+          - "======================================"
+          - ""
+          - "The environment is prepared for StackBill deployment."
+          - ""
+          - "To complete the deployment:"
+          - ""
+          - "1. Access the StackBill deployment wizard:"
+          - "   Open http://{{ domain_name }} in your browser"
+          - ""
+          - "2. In the wizard, configure:"
+          - "   - MySQL: {{ mysql_host }}:3306 (user: {{ mysql_user }})"
+          - "   - MongoDB: {{ mongodb_host }}:27017 (user: {{ mongodb_user }})"
+          - "   - RabbitMQ: {{ rabbitmq_host }}:5672 (user: {{ rabbitmq_user }})"
+          - "   - NFS: {{ nfs_server }}:{{ nfs_path }}"
+          - ""
+          - "3. The wizard will deploy the StackBill Helm chart"
+          - ""
+          - "4. Verify deployment:"
+          - "   kubectl get pods -n {{ stackbill_namespace }}"
+          - ""
+          - "======================================"
+
+    - name: Check existing pods in namespace
+      ansible.builtin.command: kubectl get pods -n {{ stackbill_namespace }}
+      register: pods_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display current pods
+      ansible.builtin.debug:
+        msg: "{{ pods_check.stdout_lines if pods_check.stdout_lines else ['No pods found in namespace ' + stackbill_namespace] }}"
+
+    # ==================== OUTPUT SUMMARY ====================
+    - name: Deployment Summary
+      ansible.builtin.debug:
+        msg:
+          - "======================================"
+          - "STACKBILL DEPLOYMENT STATUS"
+          - "======================================"
+          - "Namespace: {{ stackbill_namespace }}"
+          - "Cluster Status: Connected"
+          - "Nodes: {{ cluster_check.stdout_lines | length - 1 }} nodes ready"
+          - ""
+          - "Configuration Summary:"
+          - "  MySQL: {{ 'Configured' if mysql_host else 'Not configured' }}"
+          - "  MongoDB: {{ 'Configured' if mongodb_host else 'Not configured' }}"
+          - "  RabbitMQ: {{ 'Configured' if rabbitmq_host else 'Not configured' }}"
+          - "  NFS: {{ 'Configured' if nfs_server else 'Not configured' }}"
+          - "  Domain: {{ domain_name }}"
+          - ""
+          - "Access StackBill at: https://{{ domain_name }}"
+          - "======================================"

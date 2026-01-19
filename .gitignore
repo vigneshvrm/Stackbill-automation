@@ -4,3 +4,8 @@ node_modules/
 .env
 .DS_Store
 
+# Database and encryption (NEVER commit these!)
+data/stackbill.db
+data/.encryption_key
+data/.encryption_salt
+

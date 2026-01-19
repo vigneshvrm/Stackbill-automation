@@ -1,0 +1,40 @@
+---
+- name: Backup original MySQL config
+  copy:
+    src: "{{ mysql_conf_path }}"
+    dest: "{{ mysql_conf_path }}.bak"
+    remote_src: true
+  ignore_errors: true
+
+- name: Apply custom MySQL configuration
+  template:
+    src: mysqld.cnf.j2
+    dest: "{{ mysql_conf_path }}"
+  notify: Restart MySQL
+
+- name: Restart MySQL
+  systemd:
+    name: mysql
+    state: restarted
+
+- name: Ensure schemas exist
+  shell: |
+    mysql -e "CREATE DATABASE IF NOT EXISTS {{ item }};"
+  loop:
+    - "{{ wolf_schema }}"
+    - "{{ config_schema }}"
+  register: schema_result
+  changed_when: "'CREATE DATABASE' in schema_result.stdout or schema_result.rc == 0"
+  failed_when: false
+
+- name: Create application user
+  shell: |
+    mysql -e "
+    DROP USER IF EXISTS '{{ mysql_user }}'@'%';
+    CREATE USER '{{ mysql_user }}'@'%' IDENTIFIED BY '{{ mysql_password }}';
+    GRANT ALL PRIVILEGES ON {{ wolf_schema }}.* TO '{{ mysql_user }}'@'%';
+    GRANT ALL PRIVILEGES ON {{ config_schema }}.* TO '{{ mysql_user }}'@'%';
+    FLUSH PRIVILEGES;"
+  register: user_result
+  changed_when: "'CREATE USER' in user_result.stdout or 'GRANT' in user_result.stdout"
+  failed_when: false

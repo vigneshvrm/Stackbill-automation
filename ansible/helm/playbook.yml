@@ -1,0 +1,91 @@
+---
+# Helm Installation Playbook
+# Installs Helm package manager for Kubernetes
+
+- name: Install Helm Package Manager
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    helm_install_dir: "/usr/local/bin"
+
+  tasks:
+    - name: Verify Ubuntu version
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == "Ubuntu"
+          - ansible_distribution_version is version('22.04', '>=')
+        fail_msg: "This playbook requires Ubuntu 22.04 or later"
+        success_msg: "OS verification passed"
+
+    - name: Install required packages
+      ansible.builtin.apt:
+        name:
+          - curl
+          - apt-transport-https
+        state: present
+        update_cache: yes
+
+    - name: Download Helm installation script
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        dest: /tmp/get_helm.sh
+        mode: '0700'
+
+    - name: Install Helm
+      ansible.builtin.command: /tmp/get_helm.sh
+      register: helm_install
+      changed_when: "'is up-to-date' not in helm_install.stdout"
+
+    - name: Verify Helm installation
+      ansible.builtin.command: helm version --short
+      register: helm_version
+      changed_when: false
+
+    - name: Display Helm version
+      ansible.builtin.debug:
+        msg: "Helm installed: {{ helm_version.stdout }}"
+
+    - name: Check kubectl configuration
+      ansible.builtin.stat:
+        path: /root/.kube/config
+      register: kubeconfig_stat
+
+    - name: Add common Helm repositories
+      ansible.builtin.command: "helm repo add {{ item.name }} {{ item.url }}"
+      loop:
+        - { name: 'stable', url: 'https://charts.helm.sh/stable' }
+        - { name: 'bitnami', url: 'https://charts.bitnami.com/bitnami' }
+      register: helm_repo_add
+      failed_when: false
+      changed_when: "'has been added' in helm_repo_add.stdout"
+      when: kubeconfig_stat.stat.exists
+
+    - name: Update Helm repositories
+      ansible.builtin.command: helm repo update
+      register: helm_repo_update
+      when: kubeconfig_stat.stat.exists
+      failed_when: false
+      changed_when: false
+
+    - name: Clean up installation script
+      ansible.builtin.file:
+        path: /tmp/get_helm.sh
+        state: absent
+
+    - name: Installation Summary
+      ansible.builtin.debug:
+        msg:
+          - "======================================"
+          - "HELM INSTALLATION COMPLETE"
+          - "======================================"
+          - "Helm Version: {{ helm_version.stdout }}"
+          - "Kubeconfig: {{ 'Configured' if kubeconfig_stat.stat.exists else 'NOT CONFIGURED' }}"
+          - ""
+          - "Next Steps:"
+          - "1. Ensure kubectl is configured"
+          - "2. Add chart repositories: helm repo add <name> <url>"
+          - "3. Search for charts: helm search repo <keyword>"
+          - "4. Install charts: helm install <release-name> <chart>"
+          - "======================================"

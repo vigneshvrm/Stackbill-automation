@@ -1,0 +1,65 @@
+---
+- name: Wait for mongod to start
+  wait_for:
+    port: "{{ mongod_port }}"
+    timeout: 30
+
+- name: Wait for all secondary nodes to be ready
+  wait_for:
+    host: "{{ hostvars[item].ansible_host | default(item) }}"
+    port: "{{ mongod_port }}"
+    timeout: 60
+    delay: 5
+  loop: "{{ groups['secondary'] }}"
+  when: groups['secondary'] is defined
+
+- name: Wait for all arbiter nodes to be ready
+  wait_for:
+    host: "{{ hostvars[item].ansible_host | default(item) }}"
+    port: "{{ mongod_port }}"
+    timeout: 60
+    delay: 5
+  loop: "{{ groups['arbiter'] }}"
+  when: groups['arbiter'] is defined
+
+- name: Build member list for replica set
+  set_fact:
+    repl_members: "{{ member_list_result }}"
+  vars:
+    member_list_result: >-
+      {%- set members = [] -%}
+      {%- for host in groups['primary'] -%}
+        {%- set host_str = (hostvars[host].ansible_host | default(host)) + ':' + mongod_port|string -%}
+        {%- set _ = members.append({'_id': 0, 'host': host_str}) -%}
+      {%- endfor -%}
+      {%- set sec_idx = 1 -%}
+      {%- for host in groups['secondary'] -%}
+        {%- set host_str = (hostvars[host].ansible_host | default(host)) + ':' + mongod_port|string -%}
+        {%- set _ = members.append({'_id': sec_idx, 'host': host_str}) -%}
+        {%- set sec_idx = sec_idx + 1 -%}
+      {%- endfor -%}
+      {%- set arb_idx = groups['primary']|length + groups['secondary']|length -%}
+      {%- for host in groups['arbiter'] -%}
+        {%- set host_str = (hostvars[host].ansible_host | default(host)) + ':' + mongod_port|string -%}
+        {%- set _ = members.append({'_id': arb_idx, 'host': host_str, 'arbiterOnly': true}) -%}
+        {%- set arb_idx = arb_idx + 1 -%}
+      {%- endfor -%}
+      {{ members }}
+
+- name: Initiate replica set
+  shell: |
+    mongosh --quiet --eval 'rs.initiate({_id: "{{ replset_name }}", members: {{ repl_members | to_json }}})'
+  register: rs_init
+  failed_when: rs_init.rc != 0 and 'already initialized' not in rs_init.stdout
+
+- name: Create admin user
+  shell: |
+    mongosh --quiet <<'EOS'
+    use admin
+    if (db.getUser("{{ admin_user }}") == null) {
+      db.createUser({user:"{{ admin_user }}", pwd:"{{ admin_password }}", roles:["root"]});
+      print("created");
+    } else { print("exists"); }
+    EOS
+  register: admin_user_out
+  changed_when: '"created" in admin_user_out.stdout'

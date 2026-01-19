@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StackBill Sessions - Deployment Center</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <style>
+        /* Page-specific styles only */
+        .detail-item {
+            font-size: var(--font-size-sm);
+        }
+
+        .detail-label {
+            color: var(--color-text-muted);
+        }
+
+        .detail-value {
+            color: var(--color-text-secondary);
+            font-weight: var(--font-weight-medium);
+        }
+
+        .session-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-2);
+            margin-bottom: var(--space-4);
+            padding-top: var(--space-4);
+            border-top: 1px solid var(--color-border-light);
+        }
+
+        /* Share modal specific */
+        .share-export-section {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+            border-radius: var(--radius-lg);
+            padding: var(--space-5);
+            margin-bottom: var(--space-5);
+            border: 2px solid var(--color-primary-500);
+        }
+
+        .share-export-title {
+            font-size: var(--font-size-base);
+            color: var(--color-primary-600);
+            margin-bottom: var(--space-3);
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+        }
+
+        .share-section-desc {
+            font-size: var(--font-size-sm);
+            color: var(--color-text-muted);
+            margin-bottom: var(--space-3);
+        }
+
+        .share-details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-3);
+        }
+
+        .share-detail-label {
+            color: var(--color-text-muted);
+            font-size: var(--font-size-xs);
+            text-transform: uppercase;
+            margin-bottom: var(--space-1);
+        }
+
+        .share-detail-value {
+            font-weight: var(--font-weight-semibold);
+        }
+
+        /* Step progress badges */
+        .step-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--space-2);
+            margin-top: var(--space-4);
+        }
+
+        .step-badge {
+            padding: var(--space-1) var(--space-3);
+            border-radius: var(--radius-lg);
+            font-size: var(--font-size-xs);
+            font-weight: var(--font-weight-medium);
+        }
+
+        .step-badge.completed {
+            background: var(--color-success-500);
+            color: white;
+        }
+
+        .step-badge.current {
+            background: var(--color-primary-500);
+            color: white;
+        }
+
+        .step-badge.pending {
+            background: var(--color-gray-200);
+            color: var(--color-gray-500);
+        }
+
+        /* File info in import modal */
+        .file-info-card {
+            display: flex;
+            align-items: center;
+            gap: var(--space-3);
+        }
+
+        .file-icon {
+            font-size: 1.5rem;
+            color: var(--color-success-500);
+        }
+
+        .file-details {
+            flex: 1;
+        }
+
+        .file-name {
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-text-primary);
+        }
+
+        .file-size {
+            font-size: var(--font-size-sm);
+            color: var(--color-text-muted);
+        }
+
+        .file-remove {
+            background: none;
+            border: none;
+            color: var(--color-text-muted);
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: var(--space-1);
+        }
+
+        .file-remove:hover {
+            color: var(--color-text-primary);
+        }
+
+        @media (max-width: 767px) {
+            .session-details {
+                grid-template-columns: 1fr;
+            }
+
+            .share-details-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <div class="header-top">
+                <a href="/sessions.html" class="logo" aria-label="StackBill Deployment Center">
+                    <div class="logo-icon">&#9881;</div>
+                    <span class="logo-text">StackBill Deployment Center</span>
+                </a>
+                <nav class="header-nav" aria-label="Main navigation">
+                    <a href="/settings.html" class="header-btn">
+                        <span>&#9881;</span>
+                        <span class="btn-text">Settings</span>
+                    </a>
+                    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" title="Toggle dark mode" tabindex="0">
+                        <div class="theme-toggle-track">
+                            <div class="theme-toggle-thumb">
+                                <span class="icon-sun">&#9728;</span>
+                                <span class="icon-moon">&#9790;</span>
+                            </div>
+                        </div>
+                    </button>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-container container-lg">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">Deployment Sessions</h1>
+                <p class="page-subtitle">Manage and resume your deployment sessions</p>
+            </div>
+            <div class="page-actions">
+                <button class="btn btn-secondary" onclick="showImportModal()" aria-haspopup="dialog">
+                    <span>&#8593;</span> Import Session
+                </button>
+                <button class="btn btn-primary" onclick="showNewSessionModal()" aria-haspopup="dialog">
+                    <span>+</span> New Session
+                </button>
+            </div>
+        </div>
+
+        <div id="sessionsContainer" role="region" aria-label="Sessions list" aria-live="polite">
+            <div class="loading">
+                <div class="spinner spinner-lg"></div>
+                <span class="loading-text">Loading sessions...</span>
+            </div>
+        </div>
+    </main>
+
+    <!-- New Session Modal -->
+    <div id="newSessionModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="newSessionModalTitle">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title" id="newSessionModalTitle">Create New Session</h2>
+                <button class="modal-close" onclick="hideNewSessionModal()" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label" for="sessionNameInput">Session Name</label>
+                    <input type="text" id="sessionNameInput" class="form-control" placeholder="e.g., Production Deploy" autocomplete="off">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="hideNewSessionModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="createNewSession()">Create Session</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rename Session Modal -->
+    <div id="renameModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="renameModalTitle">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title" id="renameModalTitle">Rename Session</h2>
+                <button class="modal-close" onclick="hideRenameModal()" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label" for="renameInput">New Session Name</label>
+                    <input type="text" id="renameInput" class="form-control" placeholder="Enter new session name" autocomplete="off">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="hideRenameModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmRename()">Save Name</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle" aria-describedby="deleteModalDesc">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title" id="deleteModalTitle">
+                    <span>&#9888;</span> Delete Session?
+                </h2>
+                <button class="modal-close" onclick="hideDeleteModal()" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="deleteModalDesc" class="text-secondary">
+                    This will permanently delete the session and all associated data including server configurations and credentials.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="hideDeleteModal()">Cancel</button>
+                <button class="btn btn-danger-solid" onclick="confirmDelete()">Delete Session</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Share Session Modal -->
+    <div id="shareModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="shareModalTitle">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h2 class="modal-title" id="shareModalTitle">
+                    <span>&#128279;</span> Share Session
+                </h2>
+                <button class="modal-close" onclick="hideShareModal()" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="text-secondary mb-4">
+                    Share this session with another machine. Export the session file and import it on the target machine.
+                </p>
+
+                <!-- Export Section -->
+                <div class="share-export-section">
+                    <h4 class="share-export-title">
+                        <span>&#8595;</span> Export Session File
+                    </h4>
+                    <p class="share-section-desc">
+                        Download the complete session including all servers, credentials, and progress. Import this file on another machine to continue.
+                    </p>
+                    <button onclick="exportSession()" class="btn btn-primary btn-block btn-lg">
+                        <span>&#128190;</span> Download Session File (.json)
+                    </button>
+                </div>
+
+                <!-- Session Details -->
+                <div class="card card-body-sm bg-gray-50 mb-4">
+                    <h4 class="text-sm font-semibold text-secondary mb-3">Session Details</h4>
+                    <div id="shareSessionDetails" class="text-sm text-secondary"></div>
+                </div>
+
+                <!-- Additional Options -->
+                <details class="mb-4">
+                    <summary class="cursor-pointer font-semibold text-secondary py-2">
+                        Additional Options
+                    </summary>
+                    <div class="mt-3">
+                        <div class="form-group">
+                            <label class="form-label">Session URL (same network only)</label>
+                            <div class="flex gap-2">
+                                <input type="text" id="shareUrl" readonly class="form-control form-control-mono text-sm">
+                                <button onclick="copyShareUrl()" class="btn btn-secondary">Copy</button>
+                            </div>
+                            <p class="form-help">Only works if both machines access the same server</p>
+                        </div>
+
+                        <button onclick="copyFullDetails()" class="btn btn-secondary btn-block mt-3">
+                            <span>&#128203;</span> Copy Text Summary
+                        </button>
+
+                        <div id="fullDetailsContainer" class="hidden mt-3">
+                            <textarea id="fullDetailsText" readonly class="form-control form-textarea form-control-mono text-xs" style="height: 150px;"></textarea>
+                        </div>
+                    </div>
+                </details>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="hideShareModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Session Modal -->
+    <div id="importModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="importModalTitle">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title" id="importModalTitle">
+                    <span>&#8593;</span> Import Session
+                </h2>
+                <button class="modal-close" onclick="hideImportModal()" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="text-secondary mb-5">
+                    Import a session file exported from another machine. This will create a new session with all the servers, credentials, and progress.
+                </p>
+
+                <!-- File Upload Area -->
+                <div id="importDropZone" class="dropzone mb-5"
+                     ondragover="handleDragOver(event)"
+                     ondragleave="handleDragLeave(event)"
+                     ondrop="handleDrop(event)"
+                     onclick="document.getElementById('importFileInput').click()"
+                     role="button"
+                     tabindex="0"
+                     aria-label="Drop session file here or click to browse">
+                    <input type="file" id="importFileInput" accept=".json" class="hidden" onchange="handleFileSelect(event)">
+                    <div class="dropzone-icon">&#128193;</div>
+                    <p class="dropzone-title">Drop session file here</p>
+                    <p class="dropzone-subtitle">or click to browse</p>
+                    <p class="dropzone-hint">Accepts .json files</p>
+                </div>
+
+                <!-- Selected File Info -->
+                <div id="selectedFileInfo" class="card card-body-sm bg-gray-50 mb-4 hidden">
+                    <div class="file-info-card">
+                        <span class="file-icon">&#128196;</span>
+                        <div class="file-details">
+                            <p class="file-name" id="selectedFileName">filename.json</p>
+                            <p class="file-size" id="selectedFileSize">0 KB</p>
+                        </div>
+                        <button onclick="clearSelectedFile()" class="file-remove" title="Remove" aria-label="Remove file">&times;</button>
+                    </div>
+                </div>
+
+                <!-- Import Preview -->
+                <div id="importPreview" class="card card-body-sm bg-gray-50 mb-4 hidden">
+                    <h4 class="text-sm font-semibold text-secondary mb-3">Session Preview</h4>
+                    <div id="importPreviewContent" class="text-sm text-secondary"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="hideImportModal()">Cancel</button>
+                <button class="btn btn-primary disabled" id="confirmImportBtn" onclick="confirmImport()">Import Session</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" role="status" aria-live="polite">
+        <div id="toast" class="toast"></div>
+    </div>
+
+    <script>
+        // =====================================================
+        // THEME MANAGEMENT
+        // =====================================================
+        function initTheme() {
+            const savedTheme = localStorage.getItem('stackbill-theme');
+            if (savedTheme) {
+                document.documentElement.setAttribute('data-theme', savedTheme);
+            }
+        }
+
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('stackbill-theme', newTheme);
+        }
+
+        initTheme();
+
+        // =====================================================
+        // CONSTANTS
+        // =====================================================
+        const DEPLOYMENT_STEPS = [
+            { id: 'env-check', title: 'Env Check' },
+            { id: 'mysql', title: 'MySQL' },
+            { id: 'mongodb', title: 'MongoDB' },
+            { id: 'rabbitmq', title: 'RabbitMQ' },
+            { id: 'kubernetes', title: 'Kubernetes' },
+            { id: 'nfs', title: 'NFS' },
+            { id: 'kubectl-istio', title: 'Kubectl' },
+            { id: 'helm', title: 'Helm' },
+            { id: 'loadbalancer', title: 'Load Balancer' },
+            { id: 'ssl', title: 'SSL' },
+            { id: 'stackbill', title: 'StackBill' }
+        ];
+
+        let sessions = [];
+        let sessionToDelete = null;
+
+        // =====================================================
+        // LOAD SESSIONS
+        // =====================================================
+        async function loadSessions() {
+            try {
+                const response = await fetch('/api/sessions');
+                const data = await response.json();
+
+                if (data.success) {
+                    sessions = data.sessions;
+                    renderSessions();
+                } else {
+                    showToast('Failed to load sessions', 'error');
+                    showErrorState();
+                }
+            } catch (e) {
+                console.error('Failed to load sessions:', e);
+                showToast('Failed to load sessions', 'error');
+                showErrorState();
+            }
+        }
+
+        function showErrorState() {
+            const container = document.getElementById('sessionsContainer');
+            container.innerHTML = `
+                <div class="error-state">
+                    <div class="error-state-icon">&#9888;</div>
+                    <h3 class="error-state-title">Failed to load sessions</h3>
+                    <p class="error-state-message">Please check if the server is running and try again.</p>
+                    <button class="btn btn-primary" onclick="loadSessions()">
+                        <span>&#8635;</span> Retry
+                    </button>
+                </div>
+            `;
+        }
+
+        function renderSessions() {
+            const container = document.getElementById('sessionsContainer');
+
+            if (sessions.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">&#128640;</div>
+                        <h3 class="empty-state-title">No Sessions Yet</h3>
+                        <p class="empty-state-message">Create your first deployment session to get started.</p>
+                        <button class="btn btn-primary btn-lg" onclick="showNewSessionModal()">
+                            <span>+</span> Create First Session
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            const sortedSessions = [...sessions].sort((a, b) =>
+                new Date(b.updated_at) - new Date(a.updated_at)
+            );
+
+            container.innerHTML = `
+                <div class="sessions-grid">
+                    ${sortedSessions.map(session => renderSessionCard(session)).join('')}
+                </div>
+            `;
+        }
+
+        function renderSessionCard(session) {
+            const completedSteps = session.completedSteps || [];
+            const totalSteps = DEPLOYMENT_STEPS.length;
+            const progress = Math.round((completedSteps.length / totalSteps) * 100);
+            const isComplete = completedSteps.length === totalSteps;
+
+            const createdAt = new Date(session.created_at).toLocaleDateString('en-US', {
+                month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+            });
+            const updatedAt = new Date(session.updated_at).toLocaleDateString('en-US', {
+                month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+            });
+
+            const currentStepIndex = completedSteps.length;
+            const currentStepName = currentStepIndex < totalSteps
+                ? DEPLOYMENT_STEPS[currentStepIndex].title
+                : 'Completed';
+
+            const serverCount = Object.values(session.servers || {}).flat().length;
+            const shortId = session.id.substring(0, 8);
+
+            return `
+                <article class="session-card" tabindex="0" role="article" aria-labelledby="session-name-${session.id}">
+                    <div class="session-card-header">
+                        <div class="flex-1">
+                            <div class="session-name flex items-center gap-2">
+                                <span id="session-name-${session.id}">${escapeHtml(session.name)}</span>
+                                <button onclick="showRenameModal('${session.id}', '${escapeHtml(session.name).replace(/'/g, "\\'")}'); event.stopPropagation();"
+                                    class="btn btn-ghost btn-icon-sm opacity-50"
+                                    title="Rename session"
+                                    aria-label="Rename session">&#9998;</button>
+                            </div>
+                            <div class="session-id" title="${session.id}">ID: ${shortId}...</div>
+                        </div>
+                        <span class="badge badge-${session.status}">${formatStatus(session.status)}</span>
+                    </div>
+
+                    <div class="session-progress">
+                        <div class="progress-label">
+                            <span>Progress: ${currentStepName}</span>
+                            <span>${completedSteps.length}/${totalSteps}</span>
+                        </div>
+                        <div class="progress">
+                            <div class="progress-bar ${isComplete ? 'progress-bar-success' : ''}" style="width: ${progress}%"
+                                 role="progressbar" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100"></div>
+                        </div>
+                    </div>
+
+                    <div class="session-details">
+                        <div class="detail-item">
+                            <span class="detail-label">Created:</span>
+                            <span class="detail-value">${createdAt}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Updated:</span>
+                            <span class="detail-value">${updatedAt}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Servers:</span>
+                            <span class="detail-value">${serverCount} configured</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Auto-cleanup:</span>
+                            <span class="detail-value">${session.auto_cleanup ? 'Enabled' : 'Disabled'}</span>
+                        </div>
+                    </div>
+
+                    <div class="session-actions border-t pt-4">
+                        <button class="btn btn-primary flex-1" onclick="openSession('${session.id}')">
+                            ${isComplete ? 'View' : 'Resume'}
+                        </button>
+                        <button class="btn btn-secondary flex-1" onclick="showShareModal('${session.id}')">
+                            Share
+                        </button>
+                        <button class="btn btn-danger flex-1" onclick="showDeleteModal('${session.id}')">
+                            Delete
+                        </button>
+                    </div>
+                </article>
+            `;
+        }
+
+        function formatStatus(status) {
+            const statusMap = {
+                'in_progress': 'In Progress',
+                'completed': 'Completed',
+                'cleaned': 'Cleaned'
+            };
+            return statusMap[status] || status;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function openSession(sessionId) {
+            localStorage.setItem('stackbill_session_id', sessionId);
+            window.location.href = `/index.html?session=${sessionId}`;
+        }
+
+        // =====================================================
+        // SHARE SESSION
+        // =====================================================
+        let sessionToShare = null;
+        let shareSessionData = null;
+
+        async function showShareModal(sessionId) {
+            sessionToShare = sessionId;
+            const session = sessions.find(s => s.id === sessionId);
+            if (!session) {
+                showToast('Session not found', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/sessions/${sessionId}`);
+                const data = await response.json();
+                shareSessionData = data.success ? data.session : session;
+            } catch (e) {
+                shareSessionData = session;
+            }
+
+            const shareUrl = `${window.location.origin}/index.html?session=${sessionId}`;
+            document.getElementById('shareUrl').value = shareUrl;
+            renderShareDetails(shareSessionData);
+            generateFullDetailsText(shareSessionData, shareUrl);
+            document.getElementById('shareModal').classList.add('active');
+        }
+
+        function hideShareModal() {
+            sessionToShare = null;
+            shareSessionData = null;
+            document.getElementById('shareModal').classList.remove('active');
+            document.getElementById('fullDetailsContainer').classList.add('hidden');
+        }
+
+        function renderShareDetails(session) {
+            const completedSteps = session.completed_steps ?
+                (typeof session.completed_steps === 'string' ? JSON.parse(session.completed_steps) : session.completed_steps) : [];
+            const totalSteps = DEPLOYMENT_STEPS.length;
+            const completedCount = completedSteps.length;
+            const currentStepIndex = session.current_step || 0;
+            const currentStep = DEPLOYMENT_STEPS[currentStepIndex] || DEPLOYMENT_STEPS[0];
+
+            const servers = session.servers || {};
+            let serverCount = 0;
+            Object.values(servers).forEach(stepServers => {
+                if (Array.isArray(stepServers)) serverCount += stepServers.length;
+            });
+
+            const html = `
+                <div class="share-details-grid">
+                    <div>
+                        <div class="share-detail-label">Session Name</div>
+                        <div class="share-detail-value">${escapeHtml(session.name || 'Unnamed Session')}</div>
+                    </div>
+                    <div>
+                        <div class="share-detail-label">Status</div>
+                        <div class="share-detail-value">${formatStatus(session.status)}</div>
+                    </div>
+                    <div>
+                        <div class="share-detail-label">Progress</div>
+                        <div class="share-detail-value">${completedCount} / ${totalSteps} steps</div>
+                    </div>
+                    <div>
+                        <div class="share-detail-label">Current Step</div>
+                        <div class="share-detail-value">${currentStep.title}</div>
+                    </div>
+                    <div>
+                        <div class="share-detail-label">Servers</div>
+                        <div class="share-detail-value">${serverCount}</div>
+                    </div>
+                    <div>
+                        <div class="share-detail-label">Created</div>
+                        <div class="share-detail-value">${new Date(session.created_at).toLocaleDateString()}</div>
+                    </div>
+                </div>
+
+                <div class="step-badges">
+                    ${DEPLOYMENT_STEPS.map((step, idx) => {
+                        const isCompleted = completedSteps.includes(step.id);
+                        const isCurrent = idx === currentStepIndex;
+                        let badgeClass = 'pending';
+                        if (isCompleted) badgeClass = 'completed';
+                        else if (isCurrent) badgeClass = 'current';
+                        return `<span class="step-badge ${badgeClass}">${step.title}</span>`;
+                    }).join('')}
+                </div>
+            `;
+
+            document.getElementById('shareSessionDetails').innerHTML = html;
+        }
+
+        function generateFullDetailsText(session, shareUrl) {
+            const completedSteps = session.completed_steps ?
+                (typeof session.completed_steps === 'string' ? JSON.parse(session.completed_steps) : session.completed_steps) : [];
+            const currentStepIndex = session.current_step || 0;
+            const currentStep = DEPLOYMENT_STEPS[currentStepIndex] || DEPLOYMENT_STEPS[0];
+
+            const servers = session.servers || {};
+            let serverDetails = [];
+            Object.entries(servers).forEach(([stepId, stepServers]) => {
+                if (Array.isArray(stepServers) && stepServers.length > 0) {
+                    const step = DEPLOYMENT_STEPS.find(s => s.id === stepId);
+                    serverDetails.push(`  ${step?.title || stepId}: ${stepServers.length} server(s)`);
+                }
+            });
+
+            const text = `
+================================================================================
+STACKBILL DEPLOYMENT SESSION - SHARE DETAILS
+================================================================================
+
+SESSION URL: ${shareUrl}
+
+SESSION INFO:
+  Session ID: ${session.id}
+  Name: ${session.name || 'Unnamed Session'}
+  Status: ${formatStatus(session.status)}
+  Created: ${new Date(session.created_at).toLocaleString()}
+  Updated: ${new Date(session.updated_at).toLocaleString()}
+
+PROGRESS:
+  Current Step: ${currentStep.title} (Step ${currentStepIndex + 1} of ${DEPLOYMENT_STEPS.length})
+  Completed Steps: ${completedSteps.length} / ${DEPLOYMENT_STEPS.length}
+
+STEP STATUS:
+${DEPLOYMENT_STEPS.map((step, idx) => {
+    const isCompleted = completedSteps.includes(step.id);
+    const isCurrent = idx === currentStepIndex;
+    const status = isCompleted ? '[DONE]' : (isCurrent ? '[CURRENT]' : '[PENDING]');
+    return `  ${(idx + 1).toString().padStart(2, ' ')}. ${step.title.padEnd(12)} ${status}`;
+}).join('\n')}
+
+CONFIGURED SERVERS:
+${serverDetails.length > 0 ? serverDetails.join('\n') : '  No servers configured yet'}
+
+--------------------------------------------------------------------------------
+HOW TO CONTINUE:
+1. Open the Session URL above in your browser
+2. The deployment wizard will load with all saved progress
+3. Continue from the current step: ${currentStep.title}
+--------------------------------------------------------------------------------
+
+Note: Server passwords are stored encrypted and will be available when you resume.
+================================================================================
+`.trim();
+
+            document.getElementById('fullDetailsText').value = text;
+        }
+
+        async function copyShareUrl() {
+            const url = document.getElementById('shareUrl').value;
+            try {
+                await navigator.clipboard.writeText(url);
+                showToast('URL copied to clipboard!', 'success');
+            } catch (e) {
+                fallbackCopy(url);
+                showToast('URL copied to clipboard!', 'success');
+            }
+        }
+
+        async function copyFullDetails() {
+            document.getElementById('fullDetailsContainer').classList.remove('hidden');
+            const text = document.getElementById('fullDetailsText').value;
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast('Full details copied to clipboard!', 'success');
+            } catch (e) {
+                fallbackCopy(text);
+                showToast('Full details copied to clipboard!', 'success');
+            }
+        }
+
+        function fallbackCopy(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+        }
+
+        // =====================================================
+        // EXPORT SESSION
+        // =====================================================
+        async function exportSession() {
+            if (!sessionToShare) {
+                showToast('No session selected', 'error');
+                return;
+            }
+
+            const btn = event.target.closest('button');
+            btn.classList.add('btn-loading');
+
+            try {
+                const response = await fetch(`/api/sessions/${sessionToShare}/export-full`);
+                if (!response.ok) throw new Error(`Export failed: ${response.status}`);
+
+                const exportData = await response.json();
+                const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `stackbill-session-${sessionToShare.substring(0, 8)}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                showToast('Session exported successfully!', 'success');
+            } catch (e) {
+                console.error('Failed to export session:', e);
+                showToast('Failed to export session: ' + e.message, 'error');
+            } finally {
+                btn.classList.remove('btn-loading');
+            }
+        }
+
+        // =====================================================
+        // IMPORT SESSION
+        // =====================================================
+        let importFileData = null;
+
+        function showImportModal() {
+            document.getElementById('importModal').classList.add('active');
+            clearSelectedFile();
+        }
+
+        function hideImportModal() {
+            document.getElementById('importModal').classList.remove('active');
+            clearSelectedFile();
+        }
+
+        function clearSelectedFile() {
+            importFileData = null;
+            document.getElementById('importFileInput').value = '';
+            document.getElementById('selectedFileInfo').classList.add('hidden');
+            document.getElementById('importPreview').classList.add('hidden');
+            document.getElementById('confirmImportBtn').classList.add('disabled');
+            document.getElementById('importDropZone').classList.remove('hidden');
+        }
+
+        function handleDragOver(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            document.getElementById('importDropZone').classList.add('dragover');
+        }
+
+        function handleDragLeave(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            document.getElementById('importDropZone').classList.remove('dragover');
+        }
+
+        function handleDrop(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            document.getElementById('importDropZone').classList.remove('dragover');
+
+            const files = event.dataTransfer.files;
+            if (files.length > 0) {
+                processImportFile(files[0]);
+            }
+        }
+
+        function handleFileSelect(event) {
+            const files = event.target.files;
+            if (files.length > 0) {
+                processImportFile(files[0]);
+            }
+        }
+
+        async function processImportFile(file) {
+            if (!file.name.endsWith('.json')) {
+                showToast('Please select a .json file', 'error');
+                return;
+            }
+
+            try {
+                const text = await file.text();
+                const data = JSON.parse(text);
+
+                if (!data.session) {
+                    showToast('Invalid session file: missing session data', 'error');
+                    return;
+                }
+
+                importFileData = data;
+
+                document.getElementById('importDropZone').classList.add('hidden');
+                document.getElementById('selectedFileInfo').classList.remove('hidden');
+                document.getElementById('selectedFileName').textContent = file.name;
+                document.getElementById('selectedFileSize').textContent = formatFileSize(file.size);
+
+                renderImportPreview(data);
+
+                document.getElementById('confirmImportBtn').classList.remove('disabled');
+
+            } catch (e) {
+                console.error('Failed to parse file:', e);
+                showToast('Failed to parse file: ' + e.message, 'error');
+            }
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function renderImportPreview(data) {
+            const session = data.session;
+            const completedSteps = session.completedSteps || [];
+            const servers = data.servers || {};
+
+            let serverCount = 0;
+            Object.values(servers).forEach(stepServers => {
+                if (Array.isArray(stepServers)) serverCount += stepServers.length;
+            });
+
+            const credCount = Object.keys(data.credentials || {}).length;
+
+            const html = `
+                <div class="share-details-grid">
+                    <div>
+                        <div class="share-detail-label">Session Name</div>
+                        <div class="share-detail-value">${escapeHtml(session.name || 'Unnamed Session')}</div>
+                    </div>
+                    <div>
+                        <div class="share-detail-label">Status</div>
+                        <div class="share-detail-value">${formatStatus(session.status)}</div>
+                    </div>
+                    <div>
+                        <div class="share-detail-label">Progress</div>
+                        <div class="share-detail-value">${completedSteps.length} / ${DEPLOYMENT_STEPS.length} steps</div>
+                    </div>
+                    <div>
+                        <div class="share-detail-label">Servers</div>
+                        <div class="share-detail-value">${serverCount} configured</div>
+                    </div>
+                    <div>
+                        <div class="share-detail-label">Credentials</div>
+                        <div class="share-detail-value">${credCount} services</div>
+                    </div>
+                    <div>
+                        <div class="share-detail-label">Exported</div>
+                        <div class="share-detail-value">${data.exportedAt ? new Date(data.exportedAt).toLocaleDateString() : 'Unknown'}</div>
+                    </div>
+                </div>
+
+                <div class="step-badges">
+                    ${DEPLOYMENT_STEPS.map(step => {
+                        const isCompleted = completedSteps.includes(step.id);
+                        return `<span class="step-badge ${isCompleted ? 'completed' : 'pending'}">${step.title}</span>`;
+                    }).join('')}
+                </div>
+            `;
+
+            document.getElementById('importPreviewContent').innerHTML = html;
+            document.getElementById('importPreview').classList.remove('hidden');
+        }
+
+        async function confirmImport() {
+            if (!importFileData) {
+                showToast('No file selected', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('confirmImportBtn');
+            btn.classList.add('btn-loading');
+
+            try {
+                const response = await fetch('/api/sessions/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(importFileData)
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showToast('Session imported successfully!', 'success');
+                    hideImportModal();
+                    loadSessions();
+
+                    if (data.session && data.session.id) {
+                        setTimeout(() => {
+                            if (confirm('Session imported! Would you like to open it now?')) {
+                                openSession(data.session.id);
+                            }
+                        }, 500);
+                    }
+                } else {
+                    showToast('Failed to import: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch (e) {
+                console.error('Failed to import session:', e);
+                showToast('Failed to import session: ' + e.message, 'error');
+            } finally {
+                btn.classList.remove('btn-loading');
+            }
+        }
+
+        // =====================================================
+        // NEW SESSION MODAL
+        // =====================================================
+        function showNewSessionModal() {
+            document.getElementById('newSessionModal').classList.add('active');
+            setTimeout(() => document.getElementById('sessionNameInput').focus(), 100);
+        }
+
+        function hideNewSessionModal() {
+            document.getElementById('newSessionModal').classList.remove('active');
+            document.getElementById('sessionNameInput').value = '';
+        }
+
+        async function createNewSession() {
+            const name = document.getElementById('sessionNameInput').value.trim() || 'Deployment Session';
+            const btn = event.target.closest('button');
+            btn.classList.add('btn-loading');
+
+            try {
+                const response = await fetch('/api/sessions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    hideNewSessionModal();
+                    openSession(data.session.id);
+                } else {
+                    showToast('Failed to create session', 'error');
+                }
+            } catch (e) {
+                console.error('Failed to create session:', e);
+                showToast('Failed to create session', 'error');
+            } finally {
+                btn.classList.remove('btn-loading');
+            }
+        }
+
+        // =====================================================
+        // RENAME MODAL
+        // =====================================================
+        let sessionToRename = null;
+
+        function showRenameModal(sessionId, currentName) {
+            sessionToRename = sessionId;
+            document.getElementById('renameInput').value = currentName;
+            document.getElementById('renameModal').classList.add('active');
+            setTimeout(() => {
+                document.getElementById('renameInput').focus();
+                document.getElementById('renameInput').select();
+            }, 100);
+        }
+
+        function hideRenameModal() {
+            sessionToRename = null;
+            document.getElementById('renameModal').classList.remove('active');
+            document.getElementById('renameInput').value = '';
+        }
+
+        async function confirmRename() {
+            if (!sessionToRename) return;
+
+            const newName = document.getElementById('renameInput').value.trim();
+            if (!newName) {
+                showToast('Please enter a session name', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/sessions/${sessionToRename}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: newName })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    const session = sessions.find(s => s.id === sessionToRename);
+                    if (session) session.name = newName;
+                    renderSessions();
+                    showToast('Session renamed successfully', 'success');
+                } else {
+                    showToast('Failed to rename session', 'error');
+                }
+            } catch (e) {
+                console.error('Failed to rename session:', e);
+                showToast('Failed to rename session', 'error');
+            }
+
+            hideRenameModal();
+        }
+
+        // =====================================================
+        // DELETE MODAL
+        // =====================================================
+        function showDeleteModal(sessionId) {
+            sessionToDelete = sessionId;
+            document.getElementById('deleteModal').classList.add('active');
+        }
+
+        function hideDeleteModal() {
+            sessionToDelete = null;
+            document.getElementById('deleteModal').classList.remove('active');
+        }
+
+        async function confirmDelete() {
+            if (!sessionToDelete) return;
+
+            const btn = document.querySelector('#deleteModal .btn-danger-solid');
+            btn.classList.add('btn-loading');
+
+            try {
+                const response = await fetch(`/api/sessions/${sessionToDelete}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    sessions = sessions.filter(s => s.id !== sessionToDelete);
+                    if (localStorage.getItem('stackbill_session_id') === sessionToDelete) {
+                        localStorage.removeItem('stackbill_session_id');
+                    }
+                    renderSessions();
+                    showToast('Session deleted successfully', 'success');
+                } else {
+                    showToast('Failed to delete session', 'error');
+                }
+            } catch (e) {
+                console.error('Failed to delete session:', e);
+                showToast('Failed to delete session', 'error');
+            } finally {
+                btn.classList.remove('btn-loading');
+            }
+
+            hideDeleteModal();
+        }
+
+        // =====================================================
+        // TOAST
+        // =====================================================
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            const icons = {
+                success: '&#10004;',
+                error: '&#10006;',
+                warning: '&#9888;',
+                info: '&#8505;'
+            };
+
+            toast.innerHTML = `
+                <span class="toast-icon">${icons[type] || icons.info}</span>
+                <span class="toast-message">${escapeHtml(message)}</span>
+            `;
+            toast.className = `toast toast-${type} show`;
+
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // =====================================================
+        // KEYBOARD NAVIGATION
+        // =====================================================
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const activeModal = document.querySelector('.modal-backdrop.active');
+                if (activeModal) {
+                    activeModal.classList.remove('active');
+                    sessionToRename = null;
+                    sessionToDelete = null;
+                    sessionToShare = null;
+                }
+            }
+        });
+
+        document.getElementById('sessionNameInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') createNewSession();
+        });
+
+        document.getElementById('renameInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') confirmRename();
+        });
+
+        // Dropzone keyboard support
+        document.getElementById('importDropZone').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                document.getElementById('importFileInput').click();
+            }
+        });
+
+        // Close modals on backdrop click
+        document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+            backdrop.addEventListener('click', (e) => {
+                if (e.target === backdrop) {
+                    backdrop.classList.remove('active');
+                    sessionToRename = null;
+                    sessionToDelete = null;
+                    sessionToShare = null;
+                }
+            });
+        });
+
+        // =====================================================
+        // INITIALIZE
+        // =====================================================
+        loadSessions();
+    </script>
+</body>
+</html>

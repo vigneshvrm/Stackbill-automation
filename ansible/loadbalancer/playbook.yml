@@ -1,0 +1,136 @@
+---
+# Load Balancer Installation Playbook
+# Configures HAProxy or Nginx as a reverse proxy/load balancer for StackBill
+# The load balancer terminates SSL and proxies to Kubernetes Ingress
+
+- name: Install and configure Load Balancer
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    lb_type: "{{ load_balancer_type | default('haproxy') }}"  # haproxy or nginx
+    lb_frontend_port: "{{ frontend_port | default('443') }}"
+    lb_backend_port: "{{ backend_port | default('30080') }}"  # NodePort on K8s
+    domain_name: "{{ stackbill_domain | default('stackbill.local') }}"
+    ssl_cert_path: "/etc/ssl/stackbill/fullchain.pem"
+    ssl_key_path: "/etc/ssl/stackbill/privkey.pem"
+
+  pre_tasks:
+    - name: Verify Ubuntu version
+      assert:
+        that:
+          - ansible_distribution == "Ubuntu"
+          - ansible_distribution_version is version('22.04', '>=')
+        fail_msg: "This playbook requires Ubuntu 22.04 or later"
+        success_msg: "OS verification passed: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+  tasks:
+    #####################################################################
+    # Common Setup
+    #####################################################################
+    - name: Create SSL directory
+      file:
+        path: /etc/ssl/stackbill
+        state: directory
+        mode: '0755'
+
+    - name: Install common packages
+      apt:
+        name:
+          - curl
+          - openssl
+          - nfs-common
+        state: present
+        update_cache: yes
+
+    #####################################################################
+    # HAProxy Installation (Default)
+    #####################################################################
+    - name: Install and configure HAProxy
+      when: lb_type == 'haproxy'
+      block:
+        - name: Install HAProxy
+          apt:
+            name: haproxy
+            state: present
+
+        - name: Create HAProxy configuration
+          template:
+            src: haproxy.cfg.j2
+            dest: /etc/haproxy/haproxy.cfg
+            mode: '0644'
+            backup: yes
+          notify: Restart HAProxy
+
+        - name: Enable HAProxy service
+          systemd:
+            name: haproxy
+            enabled: true
+            state: started
+
+    #####################################################################
+    # Nginx Installation (Alternative)
+    #####################################################################
+    - name: Install and configure Nginx
+      when: lb_type == 'nginx'
+      block:
+        - name: Install Nginx
+          apt:
+            name: nginx
+            state: present
+
+        - name: Create Nginx configuration
+          template:
+            src: nginx.conf.j2
+            dest: /etc/nginx/sites-available/stackbill
+            mode: '0644'
+            backup: yes
+          notify: Restart Nginx
+
+        - name: Enable Nginx site
+          file:
+            src: /etc/nginx/sites-available/stackbill
+            dest: /etc/nginx/sites-enabled/stackbill
+            state: link
+          notify: Restart Nginx
+
+        - name: Remove default Nginx site
+          file:
+            path: /etc/nginx/sites-enabled/default
+            state: absent
+          notify: Restart Nginx
+
+        - name: Enable Nginx service
+          systemd:
+            name: nginx
+            enabled: true
+            state: started
+
+    #####################################################################
+    # Display Configuration Info
+    #####################################################################
+    - name: Display load balancer configuration
+      debug:
+        msg:
+          - "Load Balancer Type: {{ lb_type }}"
+          - "Frontend Port: {{ lb_frontend_port }}"
+          - "Backend Port: {{ lb_backend_port }}"
+          - "Domain: {{ domain_name }}"
+          - "SSL Certificate: {{ ssl_cert_path }}"
+          - ""
+          - "Next Steps:"
+          - "1. Configure SSL certificates (Step 10)"
+          - "2. Point DNS for {{ domain_name }} to this server"
+          - "3. Ensure K8s Ingress NodePort is {{ lb_backend_port }}"
+
+  handlers:
+    - name: Restart HAProxy
+      systemd:
+        name: haproxy
+        state: restarted
+
+    - name: Restart Nginx
+      systemd:
+        name: nginx
+        state: restarted

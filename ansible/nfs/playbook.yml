@@ -1,0 +1,231 @@
+---
+# NFS Server Setup Playbook for StackBill
+# Follows: https://docs.stackbill.com/docs/deployment/installing-stackbill-components/installing-nfs/
+#
+# This playbook handles three modes:
+# 1. Directory-only mode (no disk): Creates /storage directory in root filesystem
+# 2. Raw disk mode (/dev/sdb): Partitions, formats XFS, mounts, configures NFS
+# 3. Partition mode (/dev/sdb1): Mounts existing partition, configures NFS
+
+- name: Setup NFS server on Ubuntu 22.x+
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    mount_point: /storage
+    export_dir: /storage/k8-data
+    fstype: xfs
+    # User provides either raw disk (/dev/sdb), partition (/dev/sdb1), or empty for directory-only
+    disk_input: "{{ disk_device | default('') }}"
+    # Client IP range - can be specific range or * for all
+    client_ip_range: "{{ nfs_client_ip_range | default('*') }}"
+
+  pre_tasks:
+    - name: Ensure host is Ubuntu 22.04 or greater
+      assert:
+        that:
+          - ansible_facts['distribution'] == "Ubuntu"
+          - ansible_facts['distribution_major_version'] | int >= 22
+        fail_msg: "This playbook only supports Ubuntu 22.x or greater."
+        success_msg: "Host meets Ubuntu version requirement."
+
+    # Determine mode based on input
+    - name: Determine NFS storage mode
+      set_fact:
+        use_disk: "{{ disk_input | length > 0 }}"
+        is_raw_disk: "{{ disk_input is regex('^/dev/[a-z]+$') or disk_input is regex('^/dev/nvme[0-9]+n[0-9]+$') }}"
+      when: disk_input | length > 0
+
+    - name: Set directory-only mode
+      set_fact:
+        use_disk: false
+        is_raw_disk: false
+      when: disk_input | length == 0
+
+    - name: Set partition device name (when disk provided)
+      set_fact:
+        partition_device: "{{ disk_input + '1' if is_raw_disk else disk_input }}"
+        raw_disk: "{{ disk_input if is_raw_disk else disk_input | regex_replace('[0-9]+$', '') }}"
+      when: use_disk
+
+    - name: Display NFS configuration
+      debug:
+        msg:
+          - "========================================"
+          - "NFS Storage Mode: {{ 'Disk-based' if use_disk else 'Directory-only' }}"
+          - "{% if use_disk %}Input device: {{ disk_input }}{% endif %}"
+          - "{% if use_disk %}Is raw disk: {{ is_raw_disk }}{% endif %}"
+          - "{% if use_disk %}Partition to use: {{ partition_device }}{% endif %}"
+          - "Mount point: {{ mount_point }}"
+          - "Export directory: {{ export_dir }}"
+          - "Client IP range: {{ client_ip_range }}"
+          - "========================================"
+
+  tasks:
+    - name: Ensure required packages are installed
+      apt:
+        name:
+          - nfs-kernel-server
+          - xfsprogs
+          - parted
+        state: present
+        update_cache: yes
+
+    #####################################################################
+    # Directory-only mode (no disk provided)
+    #####################################################################
+    - name: Setup directory-only NFS storage
+      when: not use_disk
+      block:
+        - name: Create storage directory in root filesystem
+          file:
+            path: "{{ mount_point }}"
+            state: directory
+            mode: '0755'
+
+        - name: Display directory-only mode info
+          debug:
+            msg: "Using directory-only mode - {{ mount_point }} created in root filesystem"
+
+    #####################################################################
+    # Disk-based mode (disk or partition provided)
+    #####################################################################
+    - name: Setup disk-based NFS storage
+      when: use_disk
+      block:
+        #####################################################################
+        # Partitioning (only if raw disk provided)
+        #####################################################################
+        - name: Handle raw disk partitioning
+          when: is_raw_disk
+          block:
+            - name: Check if partition already exists
+              command: lsblk -no NAME {{ disk_input }}
+              register: lsblk_output
+              changed_when: false
+              ignore_errors: yes
+
+            - name: Check if disk has existing partitions
+              set_fact:
+                has_partitions: "{{ lsblk_output.stdout_lines | length > 1 }}"
+
+            - name: Create GPT partition table on raw disk
+              command: parted -s {{ disk_input }} mklabel gpt
+              when: not has_partitions
+
+            - name: Create primary partition using full disk
+              command: parted -s {{ disk_input }} mkpart primary xfs 0% 100%
+              when: not has_partitions
+
+            - name: Wait for partition to be recognized
+              wait_for:
+                path: "{{ partition_device }}"
+                state: present
+                timeout: 30
+              when: not has_partitions
+
+        #####################################################################
+        # Filesystem formatting
+        #####################################################################
+        - name: Check if filesystem exists on partition
+          command: blkid -o value -s TYPE {{ partition_device }}
+          register: fs_check
+          ignore_errors: yes
+          changed_when: false
+
+        - name: Format partition with XFS if not already formatted
+          filesystem:
+            fstype: "{{ fstype }}"
+            dev: "{{ partition_device }}"
+          when: fs_check.rc != 0 or fs_check.stdout == ""
+
+        #####################################################################
+        # Mount point and fstab configuration
+        #####################################################################
+        - name: Create storage mount point
+          file:
+            path: "{{ mount_point }}"
+            state: directory
+            mode: '0755'
+
+        - name: Mount storage device
+          block:
+            - name: Perform mount
+              mount:
+                path: "{{ mount_point }}"
+                src: "{{ partition_device }}"
+                fstype: "{{ fstype }}"
+                state: mounted
+          rescue:
+            - name: Force reformat partition with XFS after mount failure
+              filesystem:
+                fstype: "{{ fstype }}"
+                dev: "{{ partition_device }}"
+                force: yes
+            - name: Retry mounting storage device after reformat
+              mount:
+                path: "{{ mount_point }}"
+                src: "{{ partition_device }}"
+                fstype: "{{ fstype }}"
+                state: mounted
+
+        - name: Ensure mount is persistent in /etc/fstab
+          mount:
+            path: "{{ mount_point }}"
+            src: "{{ partition_device }}"
+            fstype: "{{ fstype }}"
+            opts: defaults,nofail
+            state: present
+
+    #####################################################################
+    # NFS Server Configuration (per StackBill docs)
+    #####################################################################
+    - name: Create NFS share directory
+      file:
+        path: "{{ export_dir }}"
+        state: directory
+        owner: nobody
+        group: nogroup
+        mode: '0777'
+
+    - name: Configure NFS export in /etc/exports
+      lineinfile:
+        path: /etc/exports
+        regexp: "^{{ export_dir }}"
+        line: "{{ export_dir }} {{ client_ip_range }}(rw,sync,no_subtree_check,no_root_squash)"
+        create: yes
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Export NFS shares
+      command: exportfs -a
+      changed_when: false
+
+    - name: Enable and restart NFS service
+      systemd:
+        name: nfs-kernel-server
+        enabled: yes
+        state: restarted
+
+    #####################################################################
+    # Summary
+    #####################################################################
+    - name: Display NFS configuration summary
+      debug:
+        msg:
+          - "========================================"
+          - "NFS Server Setup Complete!"
+          - "========================================"
+          - "Storage mode: {{ 'Disk-based (' + partition_device + ')' if use_disk else 'Directory-only' }}"
+          - "{% if use_disk %}Filesystem: {{ fstype }}{% endif %}"
+          - "Mount point: {{ mount_point }}"
+          - "Export directory: {{ export_dir }}"
+          - "Client access: {{ client_ip_range }}"
+          - "========================================"
+          - "Export: {{ export_dir }} {{ client_ip_range }}(rw,sync,no_subtree_check,no_root_squash)"
+          - "========================================"
+          - "Clients can mount with:"
+          - "  mount -t nfs <NFS_SERVER_IP>:{{ export_dir }} /mnt/nfs"
+          - "========================================"

@@ -1,0 +1,296 @@
+---
+# SSL Certificate Configuration Playbook
+# Handles: Let's Encrypt, Upload custom certificates
+# Used by Load Balancer step for SSL termination
+
+- name: SSL Certificate Configuration
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    ssl_type: "{{ ssl_certificate_type | default('letsencrypt') }}"
+    ssl_domain: "{{ domain_name | default('stackbill.local') }}"
+    ssl_country: "{{ country | default('US') }}"
+    ssl_state: "{{ state | default('California') }}"
+    ssl_city: "{{ city | default('San Francisco') }}"
+    ssl_org: "{{ organization | default('StackBill') }}"
+    ssl_ou: "{{ organizational_unit | default('IT') }}"
+    ssl_days: "{{ validity_days | default('365') }}"
+    ssl_output_dir: "{{ output_directory | default('/etc/ssl/stackbill') }}"
+    # For uploaded certificates
+    ssl_fullchain: "{{ fullchain_certificate | default('') }}"
+    ssl_privkey: "{{ private_key | default('') }}"
+
+  tasks:
+    - name: Verify Ubuntu version
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == "Ubuntu"
+          - ansible_distribution_version is version('22.04', '>=')
+        fail_msg: "This playbook requires Ubuntu 22.04 or later"
+        success_msg: "OS verification passed"
+
+    - name: Install OpenSSL
+      ansible.builtin.apt:
+        name: openssl
+        state: present
+        update_cache: yes
+
+    - name: Create SSL output directory
+      ansible.builtin.file:
+        path: "{{ ssl_output_dir }}"
+        state: directory
+        mode: '0700'
+
+    - name: Display SSL configuration
+      ansible.builtin.debug:
+        msg:
+          - "========================================"
+          - "SSL Certificate Configuration"
+          - "========================================"
+          - "Type: {{ ssl_type }}"
+          - "Domain: {{ ssl_domain }}"
+          - "Output Directory: {{ ssl_output_dir }}"
+          - "========================================"
+
+    # ==================== UPLOADED CERTIFICATES ====================
+    - name: Configure uploaded SSL certificates
+      when: ssl_type == 'upload'
+      block:
+        - name: Validate fullchain certificate provided
+          ansible.builtin.assert:
+            that:
+              - ssl_fullchain | length > 0
+            fail_msg: "Fullchain certificate content is required for upload type"
+
+        - name: Validate private key provided
+          ansible.builtin.assert:
+            that:
+              - ssl_privkey | length > 0
+            fail_msg: "Private key content is required for upload type"
+
+        - name: Write fullchain certificate
+          ansible.builtin.copy:
+            content: "{{ ssl_fullchain }}"
+            dest: "{{ ssl_output_dir }}/fullchain.pem"
+            mode: '0644'
+
+        - name: Write private key
+          ansible.builtin.copy:
+            content: "{{ ssl_privkey }}"
+            dest: "{{ ssl_output_dir }}/privkey.pem"
+            mode: '0600'
+
+        # Create symlinks for standard naming
+        - name: Create certificate symlink
+          ansible.builtin.file:
+            src: "{{ ssl_output_dir }}/fullchain.pem"
+            dest: "{{ ssl_output_dir }}/certificate.crt"
+            state: link
+            force: yes
+
+        - name: Create private key symlink
+          ansible.builtin.file:
+            src: "{{ ssl_output_dir }}/privkey.pem"
+            dest: "{{ ssl_output_dir }}/private.key"
+            state: link
+            force: yes
+
+        # For HAProxy - create combined PEM file
+        - name: Create combined PEM for HAProxy
+          ansible.builtin.shell: |
+            cat {{ ssl_output_dir }}/fullchain.pem {{ ssl_output_dir }}/privkey.pem > {{ ssl_output_dir }}/stackbill.pem
+          args:
+            creates: "{{ ssl_output_dir }}/stackbill.pem"
+
+        - name: Set combined PEM permissions
+          ansible.builtin.file:
+            path: "{{ ssl_output_dir }}/stackbill.pem"
+            mode: '0600'
+
+        - name: Verify uploaded certificate
+          ansible.builtin.command: openssl x509 -in {{ ssl_output_dir }}/fullchain.pem -text -noout
+          register: cert_verify
+          changed_when: false
+
+        - name: Display uploaded certificate info
+          ansible.builtin.debug:
+            msg:
+              - "Uploaded SSL certificates installed successfully!"
+              - "Domain: {{ ssl_domain }}"
+              - "Files created:"
+              - "  - {{ ssl_output_dir }}/fullchain.pem"
+              - "  - {{ ssl_output_dir }}/privkey.pem"
+              - "  - {{ ssl_output_dir }}/certificate.crt (symlink)"
+              - "  - {{ ssl_output_dir }}/private.key (symlink)"
+              - "  - {{ ssl_output_dir }}/stackbill.pem (combined for HAProxy)"
+
+    # ==================== LET'S ENCRYPT CERTIFICATES ====================
+    - name: Configure Let's Encrypt certificate
+      when: ssl_type == 'letsencrypt'
+      block:
+        - name: Install Certbot
+          ansible.builtin.apt:
+            name:
+              - certbot
+            state: present
+            update_cache: yes
+
+        - name: Check if certificate already exists
+          ansible.builtin.stat:
+            path: "/etc/letsencrypt/live/{{ ssl_domain }}/fullchain.pem"
+          register: letsencrypt_cert
+
+        - name: Obtain Let's Encrypt certificate (standalone mode)
+          ansible.builtin.command: >
+            certbot certonly --standalone
+            -d {{ ssl_domain }}
+            --non-interactive
+            --agree-tos
+            --email {{ admin_email | default('admin@' + ssl_domain) }}
+          register: certbot_result
+          when: not letsencrypt_cert.stat.exists
+
+        - name: Copy certificate files to output directory
+          ansible.builtin.copy:
+            src: "/etc/letsencrypt/live/{{ ssl_domain }}/{{ item.src }}"
+            dest: "{{ ssl_output_dir }}/{{ item.dest }}"
+            remote_src: yes
+            mode: "{{ item.mode }}"
+          loop:
+            - { src: 'privkey.pem', dest: 'privkey.pem', mode: '0600' }
+            - { src: 'fullchain.pem', dest: 'fullchain.pem', mode: '0644' }
+          when: letsencrypt_cert.stat.exists or (certbot_result is defined and certbot_result is changed)
+
+        # Create symlinks for standard naming
+        - name: Create certificate symlink
+          ansible.builtin.file:
+            src: "{{ ssl_output_dir }}/fullchain.pem"
+            dest: "{{ ssl_output_dir }}/certificate.crt"
+            state: link
+            force: yes
+
+        - name: Create private key symlink
+          ansible.builtin.file:
+            src: "{{ ssl_output_dir }}/privkey.pem"
+            dest: "{{ ssl_output_dir }}/private.key"
+            state: link
+            force: yes
+
+        # For HAProxy - create combined PEM file
+        - name: Create combined PEM for HAProxy
+          ansible.builtin.shell: |
+            cat {{ ssl_output_dir }}/fullchain.pem {{ ssl_output_dir }}/privkey.pem > {{ ssl_output_dir }}/stackbill.pem
+          args:
+            creates: "{{ ssl_output_dir }}/stackbill.pem"
+
+        - name: Set combined PEM permissions
+          ansible.builtin.file:
+            path: "{{ ssl_output_dir }}/stackbill.pem"
+            mode: '0600'
+
+        - name: Display Let's Encrypt certificate status
+          ansible.builtin.debug:
+            msg:
+              - "Let's Encrypt certificate configured!"
+              - "Domain: {{ ssl_domain }}"
+              - "Original path: /etc/letsencrypt/live/{{ ssl_domain }}/"
+              - "Copied to: {{ ssl_output_dir }}/"
+              - "Auto-renewal is configured via certbot timer"
+
+    # ==================== SELF-SIGNED CERTIFICATES (fallback for manual mode) ====================
+    - name: Generate self-signed SSL certificate
+      when: ssl_type == 'self-signed'
+      block:
+        - name: Generate private key
+          ansible.builtin.command: >
+            openssl genrsa -out {{ ssl_output_dir }}/privkey.pem 2048
+          args:
+            creates: "{{ ssl_output_dir }}/privkey.pem"
+
+        - name: Set private key permissions
+          ansible.builtin.file:
+            path: "{{ ssl_output_dir }}/privkey.pem"
+            mode: '0600'
+
+        - name: Generate self-signed certificate
+          ansible.builtin.command: >
+            openssl req -new -x509
+            -key {{ ssl_output_dir }}/privkey.pem
+            -out {{ ssl_output_dir }}/fullchain.pem
+            -days {{ ssl_days }}
+            -subj "/C={{ ssl_country }}/ST={{ ssl_state }}/L={{ ssl_city }}/O={{ ssl_org }}/OU={{ ssl_ou }}/CN={{ ssl_domain }}"
+          args:
+            creates: "{{ ssl_output_dir }}/fullchain.pem"
+
+        # Create symlinks for standard naming
+        - name: Create certificate symlink
+          ansible.builtin.file:
+            src: "{{ ssl_output_dir }}/fullchain.pem"
+            dest: "{{ ssl_output_dir }}/certificate.crt"
+            state: link
+            force: yes
+
+        - name: Create private key symlink
+          ansible.builtin.file:
+            src: "{{ ssl_output_dir }}/privkey.pem"
+            dest: "{{ ssl_output_dir }}/private.key"
+            state: link
+            force: yes
+
+        # For HAProxy - create combined PEM file
+        - name: Create combined PEM for HAProxy
+          ansible.builtin.shell: |
+            cat {{ ssl_output_dir }}/fullchain.pem {{ ssl_output_dir }}/privkey.pem > {{ ssl_output_dir }}/stackbill.pem
+          args:
+            creates: "{{ ssl_output_dir }}/stackbill.pem"
+
+        - name: Set combined PEM permissions
+          ansible.builtin.file:
+            path: "{{ ssl_output_dir }}/stackbill.pem"
+            mode: '0600'
+
+        - name: Verify certificate
+          ansible.builtin.command: openssl x509 -in {{ ssl_output_dir }}/fullchain.pem -text -noout
+          register: cert_info
+          changed_when: false
+
+        - name: Display certificate info
+          ansible.builtin.debug:
+            msg:
+              - "Self-signed certificate generated successfully!"
+              - "Domain: {{ ssl_domain }}"
+              - "Valid for: {{ ssl_days }} days"
+              - "WARNING: Self-signed certificates will show browser warnings"
+
+    # ==================== OUTPUT CREDENTIALS ====================
+    - name: Output SSL credentials
+      ansible.builtin.debug:
+        msg:
+          - "CREDENTIALS|ssl|type={{ ssl_type }}"
+          - "CREDENTIALS|ssl|domain={{ ssl_domain }}"
+          - "CREDENTIALS|ssl|private_key={{ ssl_output_dir }}/privkey.pem"
+          - "CREDENTIALS|ssl|certificate={{ ssl_output_dir }}/fullchain.pem"
+          - "CREDENTIALS|ssl|combined_pem={{ ssl_output_dir }}/stackbill.pem"
+
+    # ==================== SUMMARY ====================
+    - name: SSL Installation Summary
+      ansible.builtin.debug:
+        msg:
+          - "======================================"
+          - "SSL CERTIFICATE CONFIGURATION COMPLETE"
+          - "======================================"
+          - "Type: {{ ssl_type | upper }}"
+          - "Domain: {{ ssl_domain }}"
+          - "Output Directory: {{ ssl_output_dir }}"
+          - ""
+          - "Files Available:"
+          - "  Full Chain: {{ ssl_output_dir }}/fullchain.pem"
+          - "  Private Key: {{ ssl_output_dir }}/privkey.pem"
+          - "  Combined (HAProxy): {{ ssl_output_dir }}/stackbill.pem"
+          - "  Certificate (symlink): {{ ssl_output_dir }}/certificate.crt"
+          - "  Private Key (symlink): {{ ssl_output_dir }}/private.key"
+          - ""
+          - "Ready for Load Balancer configuration!"
+          - "======================================"

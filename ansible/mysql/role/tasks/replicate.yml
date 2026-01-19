@@ -1,0 +1,79 @@
+---
+- name: Ensure binary logging and replication settings enabled on master
+  when: "'primary' in group_names"
+  block:
+    - name: Update server-id and log_bin on master
+      lineinfile:
+        path: "{{ mysql_conf_path }}"
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        insertafter: EOF
+      loop:
+        - { regexp: '^server-id', line: 'server-id=1' }
+        - { regexp: '^log_bin', line: 'log_bin=/var/log/mysql/mysql-bin.log' }
+      notify: Restart MySQL
+
+    - name: Generate replication password if not provided
+      set_fact:
+        replication_password: "{{ replication_password | default(lookup('password', '/dev/null chars=ascii_letters,digits length=16')) }}"
+      when: replication_password == "" or replication_password is not defined
+
+    - name: Create replication user for all hosts
+      shell: |
+        mysql -e "
+        DROP USER IF EXISTS '{{ replication_user }}'@'%';
+        CREATE USER '{{ replication_user }}'@'%' IDENTIFIED BY '{{ replication_password }}';
+        GRANT REPLICATION SLAVE ON *.* TO '{{ replication_user }}'@'%';
+        FLUSH PRIVILEGES;
+        SELECT User, Host FROM mysql.user WHERE User='{{ replication_user }}';"
+      register: rep_user_result
+      changed_when: "'CREATE USER' in rep_user_result.stdout or 'GRANT' in rep_user_result.stdout"
+      failed_when: false
+
+    - name: Verify replication user was created
+      debug:
+        msg: "Replication user {{ replication_user }} created successfully"
+      when: rep_user_result.rc == 0
+
+    - name: Get master status
+      command: mysql -NBe "SHOW MASTER STATUS;"
+      register: master_status
+
+    - set_fact:
+        master_log_file: "{{ master_status.stdout_lines[0].split('\t')[0] }}"
+        master_log_pos: "{{ master_status.stdout_lines[0].split('\t')[1] }}"
+
+    - debug:
+        msg:
+          - "Master Log File: {{ master_log_file }}"
+          - "Master Log Position: {{ master_log_pos }}"
+
+- name: Configure slave replication
+  when: "'secondary' in group_names"
+  block:
+    - name: Update server-id on slave
+      lineinfile:
+        path: "{{ mysql_conf_path }}"
+        regexp: '^server-id'
+        line: "server-id=2"
+        insertafter: EOF
+      notify: Restart MySQL
+
+    - name: Get replication password from primary
+      set_fact:
+        replication_password: "{{ hostvars[groups['primary'][0]].replication_password | default(replication_password | default('')) }}"
+
+    - name: Configure replication on slave
+      shell: |
+        mysql -e "
+        STOP SLAVE;
+        CHANGE MASTER TO
+          MASTER_HOST='{{ hostvars[groups['primary'][0]].ansible_host }}',
+          MASTER_USER='{{ replication_user }}',
+          MASTER_PASSWORD='{{ replication_password }}',
+          MASTER_LOG_FILE='{{ hostvars[groups['primary'][0]].master_log_file }}',
+          MASTER_LOG_POS={{ hostvars[groups['primary'][0]].master_log_pos }};
+        START SLAVE;
+        SHOW SLAVE STATUS\G;"
+      args:
+        executable: /bin/bash

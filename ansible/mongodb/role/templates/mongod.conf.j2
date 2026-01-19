@@ -1,0 +1,27 @@
+# mongod.conf managed by Ansible
+
+net:
+  port: {{ mongod_port }}
+  bindIp: {{ mongod_bind_ip }}
+
+storage:
+  dbPath: /var/lib/mongodb
+
+systemLog:
+  destination: file
+  logAppend: true
+  path: /var/log/mongodb/mongod.log
+
+processManagement:
+  timeZoneInfo: /usr/share/zoneinfo
+
+security:
+  authorization: "enabled"
+{% if deployment_mode == 'cluster' %}
+  keyFile: "{{ keyfile_path }}"
+{% endif %}
+
+{% if deployment_mode == 'cluster' %}
+replication:
+  replSetName: "{{ replset_name }}"
+{% endif %}

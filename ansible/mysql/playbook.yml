@@ -1,0 +1,14 @@
+---
+- name: Install and configure MySQL
+  hosts: mysql
+  become: true
+  gather_facts: true
+  serial: 1
+  order: inventory
+  any_errors_fatal: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python | default('/usr/bin/python3') }}"
+  roles:
+    - role: ./role
+      vars:
+        deployment_mode: "{{ deployment_mode | default('single') }}"
