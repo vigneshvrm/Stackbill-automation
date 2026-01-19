@@ -1,6 +1,7 @@
 node_modules/
 .inventory/
 *.log
+logs/
 .env
 .DS_Store
 

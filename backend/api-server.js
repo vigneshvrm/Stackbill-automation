@@ -1,6 +1,7 @@
 const express = require('express');
 const { exec, spawn } = require('child_process');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
@@ -11,7 +12,111 @@ const db = require('./database');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// =====================================================
+// LOGGING SYSTEM
+// =====================================================
+const LOG_DIR = path.join(__dirname, '..', 'logs');
+const LOG_FILE = path.join(LOG_DIR, 'stackbill.log');
+const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_LOG_FILES = 5;
+
+// Ensure log directory exists
+if (!fsSync.existsSync(LOG_DIR)) {
+  fsSync.mkdirSync(LOG_DIR, { recursive: true });
+}
+
+// Log levels
+const LOG_LEVELS = {
+  ERROR: 'ERROR',
+  WARN: 'WARN',
+  INFO: 'INFO',
+  DEBUG: 'DEBUG'
+};
+
+// Rotate log files if needed
+function rotateLogsIfNeeded() {
+  try {
+    if (!fsSync.existsSync(LOG_FILE)) return;
+
+    const stats = fsSync.statSync(LOG_FILE);
+    if (stats.size < MAX_LOG_SIZE) return;
+
+    // Rotate existing log files
+    for (let i = MAX_LOG_FILES - 1; i >= 1; i--) {
+      const oldFile = `${LOG_FILE}.${i}`;
+      const newFile = `${LOG_FILE}.${i + 1}`;
+      if (fsSync.existsSync(oldFile)) {
+        if (i === MAX_LOG_FILES - 1) {
+          fsSync.unlinkSync(oldFile);
+        } else {
+          fsSync.renameSync(oldFile, newFile);
+        }
+      }
+    }
+
+    // Rename current log to .1
+    fsSync.renameSync(LOG_FILE, `${LOG_FILE}.1`);
+  } catch (err) {
+    console.error('Log rotation error:', err);
+  }
+}
+
+// Write log entry
+function log(level, message, meta = {}) {
+  rotateLogsIfNeeded();
+
+  const timestamp = new Date().toISOString();
+  const metaStr = Object.keys(meta).length > 0 ? ` ${JSON.stringify(meta)}` : '';
+  const logEntry = `[${timestamp}] [${level}] ${message}${metaStr}\n`;
+
+  // Write to file
+  try {
+    fsSync.appendFileSync(LOG_FILE, logEntry);
+  } catch (err) {
+    console.error('Failed to write log:', err);
+  }
+
+  // Also write to console in development
+  if (process.env.NODE_ENV !== 'production') {
+    const color = level === 'ERROR' ? '\x1b[31m' : level === 'WARN' ? '\x1b[33m' : level === 'INFO' ? '\x1b[36m' : '\x1b[37m';
+    console.log(`${color}[${level}]\x1b[0m ${message}${metaStr}`);
+  }
+}
+
+// Logger helper functions
+const logger = {
+  error: (message, meta) => log(LOG_LEVELS.ERROR, message, meta),
+  warn: (message, meta) => log(LOG_LEVELS.WARN, message, meta),
+  info: (message, meta) => log(LOG_LEVELS.INFO, message, meta),
+  debug: (message, meta) => log(LOG_LEVELS.DEBUG, message, meta)
+};
+
+// Request logging middleware
+function requestLogger(req, res, next) {
+  const start = Date.now();
+
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    const logData = {
+      method: req.method,
+      url: req.originalUrl,
+      status: res.statusCode,
+      duration: `${duration}ms`,
+      ip: req.ip || req.connection.remoteAddress
+    };
+
+    if (res.statusCode >= 400) {
+      logger.warn(`HTTP ${res.statusCode} ${req.method} ${req.originalUrl}`, logData);
+    } else {
+      logger.info(`HTTP ${res.statusCode} ${req.method} ${req.originalUrl}`, logData);
+    }
+  });
+
+  next();
+}
+
 app.use(express.json());
+app.use(requestLogger);
 app.use(express.static(path.join(__dirname, '..', 'frontend', 'public')));
 
 // Store for temporary inventory files
@@ -276,8 +381,12 @@ function executePlaybook(playbookType, inventoryPath, playbookPath, extraVars = 
       ANSIBLE_ROLES_PATH: rolesPathNative
     };
     
-    console.log(`Executing: ${command}`);
-    console.log(`Platform: ${process.platform}, IS_WINDOWS: ${IS_WINDOWS}`);
+    logger.info(`Executing playbook: ${playbookType}`, {
+      playbookPath: finalPlaybookPath,
+      inventoryPath: finalInventoryPath,
+      extraVars: Object.keys(extraVars)
+    });
+    logger.debug(`Full command: ${command}`);
     
     let child;
     if (IS_WINDOWS) {
@@ -490,6 +599,7 @@ function executePlaybook(playbookType, inventoryPath, playbookPath, extraVars = 
             ...(credentials[currentService] || {})
           };
         }
+        logger.info(`Playbook ${playbookType} completed successfully`, { exitCode: code });
         resolve({
           success: true,
           stdout,
@@ -505,6 +615,7 @@ function executePlaybook(playbookType, inventoryPath, playbookPath, extraVars = 
         }
         // Include more detailed error information
         const errorMsg = stderr || stdout || `Process exited with code ${code}`;
+        logger.error(`Playbook ${playbookType} failed`, { exitCode: code, error: errorMsg.substring(0, 500) });
         reject({
           success: false,
           error: `Process exited with code ${code}`,
@@ -516,8 +627,9 @@ function executePlaybook(playbookType, inventoryPath, playbookPath, extraVars = 
         });
       }
     });
-    
+
     child.on('error', (error) => {
+      logger.error(`Playbook ${playbookType} spawn error`, { error: error.message });
       reject({
         success: false,
         error: error.message,
@@ -862,6 +974,36 @@ app.post('/api/playbook/helm', async (req, res) => {
 
     try {
       const result = await executePlaybook('helm', inventoryPath, playbookPath, variables);
+      await cleanupInventory(inventoryId, servers);
+      res.json(result);
+    } catch (error) {
+      await cleanupInventory(inventoryId, servers);
+      res.status(500).json(error);
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Load Balancer (HAProxy/Nginx) Setup
+app.post('/api/playbook/loadbalancer', async (req, res) => {
+  const playbookPath = path.join(__dirname, '..', 'ansible', 'loadbalancer', 'playbook.yml');
+
+  if (req.query.stream === 'true' || req.headers.accept?.includes('text/event-stream')) {
+    return executePlaybookStream(req, res, 'loadbalancer', playbookPath);
+  }
+
+  try {
+    const { servers, variables = {} } = req.body;
+
+    if (!servers || !Array.isArray(servers) || servers.length === 0) {
+      return res.status(400).json({ error: 'Servers array is required' });
+    }
+
+    const { inventoryId, inventoryPath } = await generateInventory(servers, 'loadbalancer');
+
+    try {
+      const result = await executePlaybook('loadbalancer', inventoryPath, playbookPath, variables);
       await cleanupInventory(inventoryId, servers);
       res.json(result);
     } catch (error) {
@@ -1397,13 +1539,47 @@ app.delete('/api/settings/:key', (req, res) => {
   }
 });
 
+// Error handling middleware
+app.use((err, req, res, next) => {
+  logger.error('Unhandled error', { error: err.message, stack: err.stack, url: req.originalUrl });
+  res.status(500).json({ error: 'Internal server error' });
+});
+
 // Start server
 ensureInventoryDir().then(() => {
   app.listen(PORT, () => {
+    logger.info('Server started', { port: PORT, nodeEnv: process.env.NODE_ENV || 'development' });
     console.log(`🚀 Ansible API Server running on http://localhost:${PORT}`);
     console.log(`📋 Frontend available at http://localhost:${PORT}`);
     console.log(`💾 Database location: ./data/stackbill.db`);
+    console.log(`📝 Logs location: ${LOG_FILE}`);
   });
+}).catch(err => {
+  logger.error('Failed to start server', { error: err.message });
+  console.error('Failed to start server:', err);
+  process.exit(1);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  logger.info('SIGTERM received, shutting down gracefully');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  logger.info('SIGINT received, shutting down gracefully');
+  process.exit(0);
+});
+
+process.on('uncaughtException', (err) => {
+  logger.error('Uncaught exception', { error: err.message, stack: err.stack });
+  console.error('Uncaught exception:', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled rejection', { reason: String(reason) });
+  console.error('Unhandled rejection:', reason);
 });
 
 module.exports = app;

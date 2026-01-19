@@ -4,7 +4,10 @@
       "Bash(npm start)",
       "Bash(netstat:*)",
       "Bash(findstr:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nMajor UI/UX overhaul and backend restructure\n\nFrontend:\n- Add production-ready CSS design system with design tokens\n- Implement dark mode with system preference detection and toggle\n- Add consistent form input styling \\(.form-input, .form-control, .form-select\\)\n- Add Share Session modal for index.html matching sessions.html\n- Add sessions management page with import/export functionality\n- Add settings page for global configuration\n- Improve accessibility with ARIA labels and keyboard navigation\n- Add responsive breakpoints and mobile-friendly layouts\n\nBackend:\n- Add session import/export API endpoints\n- Add full session export with all configuration data\n- Restructure into modular controllers, routes, and services\n- Add database.js for SQLite persistence\n- Add comprehensive API documentation\n\nAnsible:\n- Reorganize playbooks into service-specific directories\n- Add kubernetes, loadbalancer, and SSL playbooks\n- Add helm and kubectl-istio setup playbooks\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
