@@ -9,6 +9,7 @@ This document provides instructions for installing and deploying the StackBill D
 - [Manual Installation](#manual-installation)
 - [Configuration](#configuration)
 - [Service Management](#service-management)
+- [Patch Management](#patch-management)
 - [Troubleshooting](#troubleshooting)
 - [Upgrading](#upgrading)
 - [Uninstallation](#uninstallation)
@@ -234,6 +235,70 @@ Expected response:
 ```json
 {"status":"ok","message":"Ansible API Server is running"}
 ```
+
+## Patch Management
+
+The Patch Manager provides zero-downtime updates, automatic backups, and easy rollback capabilities.
+
+### Using the Patch Manager
+
+```bash
+# Check current status and version
+sudo /opt/stackbill-deploy/scripts/patch-manager.sh status
+
+# Check for available updates
+sudo /opt/stackbill-deploy/scripts/patch-manager.sh check
+
+# Apply updates (automatically creates backup)
+sudo /opt/stackbill-deploy/scripts/patch-manager.sh update
+
+# Force update even if no changes detected
+sudo /opt/stackbill-deploy/scripts/patch-manager.sh update --force
+
+# Run health checks
+sudo /opt/stackbill-deploy/scripts/patch-manager.sh health
+```
+
+### Backup Management
+
+```bash
+# Create a manual backup
+sudo /opt/stackbill-deploy/scripts/patch-manager.sh backup
+
+# List all available backups
+sudo /opt/stackbill-deploy/scripts/patch-manager.sh backups
+
+# Rollback to a specific backup
+sudo /opt/stackbill-deploy/scripts/patch-manager.sh rollback backup_20240115_143022_abc123
+
+# Rollback to the most recent backup
+sudo /opt/stackbill-deploy/scripts/patch-manager.sh rollback-last
+```
+
+### Update Process
+
+When you run `patch-manager.sh update`, the following happens:
+
+1. **Check for updates** - Compares local version with remote
+2. **Create backup** - Saves current state (data, config, version)
+3. **Pull changes** - Downloads latest code from repository
+4. **Update dependencies** - Runs `npm install --production`
+5. **Graceful restart** - Restarts service with minimal downtime
+6. **Verify** - Checks if service started successfully
+7. **Auto-rollback** - If service fails, automatically restores backup
+
+### Backup Retention
+
+- Backups are stored in `/opt/stackbill-deploy/backups/`
+- Maximum 5 backups are kept (configurable)
+- Each backup includes: database, logs, configuration, version info
+
+### Zero-Downtime Updates
+
+The service is configured for graceful shutdown:
+- Active connections are allowed to complete (up to 25 seconds)
+- New connections are held briefly during restart
+- Typical restart time: 2-3 seconds
 
 ## Troubleshooting
 

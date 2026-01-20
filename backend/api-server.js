@@ -1550,9 +1550,12 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
+// Store server instance for graceful shutdown
+let server;
+
 // Start server
 ensureInventoryDir().then(() => {
-  app.listen(PORT, () => {
+  server = app.listen(PORT, () => {
     logger.info('Server started', { port: PORT, nodeEnv: process.env.NODE_ENV || 'development' });
     console.log(`🚀 Ansible API Server running on http://localhost:${PORT}`);
     console.log(`📋 Frontend available at http://localhost:${PORT}`);
@@ -1565,16 +1568,44 @@ ensureInventoryDir().then(() => {
   process.exit(1);
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM received, shutting down gracefully');
-  process.exit(0);
+// Graceful shutdown function
+function gracefulShutdown(signal) {
+  logger.info(`${signal} received, starting graceful shutdown...`);
+  console.log(`\n${signal} received. Graceful shutdown starting...`);
+
+  // Stop accepting new connections
+  if (server) {
+    server.close((err) => {
+      if (err) {
+        logger.error('Error during server close', { error: err.message });
+        process.exit(1);
+      }
+
+      logger.info('HTTP server closed. Cleanup complete.');
+      console.log('HTTP server closed. Goodbye!');
+      process.exit(0);
+    });
+
+    // Force close after timeout
+    setTimeout(() => {
+      logger.warn('Forcing shutdown after timeout');
+      console.log('Forcing shutdown...');
+      process.exit(1);
+    }, 25000); // 25 seconds timeout
+  } else {
+    process.exit(0);
+  }
+}
+
+// Handle SIGHUP for reload (used by systemd reload)
+process.on('SIGHUP', () => {
+  logger.info('SIGHUP received - reload signal (no-op for now, use restart for updates)');
+  console.log('SIGHUP received - reload signal');
 });
 
-process.on('SIGINT', () => {
-  logger.info('SIGINT received, shutting down gracefully');
-  process.exit(0);
-});
+// Graceful shutdown signals
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught exception', { error: err.message, stack: err.stack });
