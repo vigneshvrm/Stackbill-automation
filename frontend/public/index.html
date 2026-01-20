@@ -8,6 +8,21 @@
     <style>
         /* Index-specific styles - Step Cards & Wizard Components */
 
+        /* Legacy color variable aliases for dark mode compatibility */
+        :root {
+            --gray-50: var(--color-gray-50);
+            --gray-100: var(--color-gray-100);
+            --gray-200: var(--color-gray-200);
+            --gray-300: var(--color-gray-300);
+            --gray-400: var(--color-gray-400);
+            --gray-500: var(--color-text-muted);
+            --gray-600: var(--color-text-secondary);
+            --gray-700: var(--color-text-secondary);
+            --gray-800: var(--color-text-primary);
+            --gray-900: var(--color-text-primary);
+            --primary: var(--color-primary-500);
+        }
+
         /* Progress Steps in Header */
         .progress-steps {
             display: flex;
@@ -299,6 +314,94 @@
         .add-server-btn:hover {
             background: var(--color-gray-200);
             border-color: var(--color-gray-400);
+        }
+
+        /* Remove Server Button */
+        .remove-server-btn {
+            background: transparent;
+            border: 1px solid var(--color-error-500);
+            color: var(--color-error-500);
+            padding: 6px 12px;
+            border-radius: var(--radius-md);
+            font-size: var(--font-size-xs);
+            font-weight: 500;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+
+        .remove-server-btn:hover {
+            background: var(--color-error-500);
+            color: white;
+        }
+
+        /* Server Card Collapsible */
+        .server-card {
+            background: var(--color-bg-card);
+            border: 2px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+        }
+
+        .server-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--space-4);
+            cursor: pointer;
+            background: var(--color-gray-50);
+            border-bottom: 1px solid var(--color-border);
+            transition: background var(--transition-fast);
+        }
+
+        .server-card-header:hover {
+            background: var(--color-gray-100);
+        }
+
+        .server-card.collapsed .server-card-header {
+            border-bottom: none;
+        }
+
+        .server-card-body {
+            padding: var(--space-4);
+            display: block;
+        }
+
+        .server-card.collapsed .server-card-body {
+            display: none;
+        }
+
+        .server-role {
+            font-weight: 600;
+            color: var(--color-text-primary);
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+        }
+
+        .server-role-badge {
+            background: var(--color-primary-500);
+            color: white;
+            padding: 4px 10px;
+            border-radius: var(--radius-sm);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .server-toggle-icon {
+            color: var(--color-text-muted);
+            transition: transform var(--transition-fast);
+            font-size: 1.2rem;
+        }
+
+        .server-card.collapsed .server-toggle-icon {
+            transform: rotate(-90deg);
+        }
+
+        .server-header-actions {
+            display: flex;
+            align-items: center;
+            gap: var(--space-3);
         }
 
         /* Mode Toggle */
@@ -2566,6 +2669,14 @@
             }
         }
 
+        // Toggle server card collapse/expand
+        function toggleServerCard(serverId) {
+            const card = document.getElementById(`server-card-${serverId}`);
+            if (card) {
+                card.classList.toggle('collapsed');
+            }
+        }
+
         function renderServers(stepId) {
             const container = document.getElementById(`servers-${stepId}`);
             if (!container) return;
@@ -2682,79 +2793,88 @@
                     `;
                 }
 
+                // Summary for collapsed state
+                const serverSummary = server.hostname ? `${server.hostname}:${server.ssh_port || 22}` : 'Not configured';
+
                 return `
-                    <div class="server-card">
-                        <div class="server-card-header">
+                    <div class="server-card" id="server-card-${server.id}">
+                        <div class="server-card-header" onclick="toggleServerCard(${server.id})">
                             <div class="server-role">
+                                <span class="server-toggle-icon">&#9660;</span>
                                 <span class="server-role-badge">${badgeLabel}</span>
-                                ${server.name || `VM ${index + 1}`}
+                                <span>${server.name || `VM ${index + 1}`}</span>
+                                <span style="color: var(--color-text-muted); font-weight: 400; font-size: 0.85rem; margin-left: 8px;">${serverSummary}</span>
                             </div>
-                            ${servers.length > 1 ? `
-                                <button type="button" class="remove-server-btn" onclick="removeServerFromStep('${stepId}', ${server.id})">
-                                    Remove
-                                </button>
+                            <div class="server-header-actions">
+                                ${servers.length > 1 ? `
+                                    <button type="button" class="remove-server-btn" onclick="event.stopPropagation(); removeServerFromStep('${stepId}', ${server.id})">
+                                        Remove
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                        <div class="server-card-body">
+                            ${purposeOptions}
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Hostname / IP</label>
+                                    <input type="text" class="form-input" placeholder="10.0.0.20"
+                                           value="${server.hostname || ''}"
+                                           onchange="updateServerField('${stepId}', ${server.id}, 'hostname', this.value)">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">SSH Port</label>
+                                    <input type="number" class="form-input" placeholder="22"
+                                           value="${server.ssh_port || 22}"
+                                           onchange="updateServerField('${stepId}', ${server.id}, 'ssh_port', parseInt(this.value))">
+                                </div>
+                            </div>
+
+                            <!-- SSH Connection Settings -->
+                            <div class="form-group">
+                                <label class="form-label">SSH User Type</label>
+                                <div class="radio-group horizontal">
+                                    <label class="radio-option ${sshUserType === 'root' ? 'selected' : ''}"
+                                           onclick="updateServerField('${stepId}', ${server.id}, 'ssh_user_type', 'root'); updateServerField('${stepId}', ${server.id}, 'ssh_user', 'root'); renderServers('${stepId}');">
+                                        <input type="radio" name="user_type_${server.id}" value="root" ${sshUserType === 'root' ? 'checked' : ''}>
+                                        <div class="radio-option-content">
+                                            <div class="radio-option-label">Root User</div>
+                                            <div class="radio-option-desc">Direct root access</div>
+                                        </div>
+                                    </label>
+                                    <label class="radio-option ${sshUserType === 'sudo' ? 'selected' : ''}"
+                                           onclick="updateServerField('${stepId}', ${server.id}, 'ssh_user_type', 'sudo'); renderServers('${stepId}');">
+                                        <input type="radio" name="user_type_${server.id}" value="sudo" ${sshUserType === 'sudo' ? 'checked' : ''}>
+                                        <div class="radio-option-content">
+                                            <div class="radio-option-label">Sudo User</div>
+                                            <div class="radio-option-desc">Escalate to root</div>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            ${sshUserType === 'sudo' ? `
+                                <div class="form-group">
+                                    <label class="form-label">Username</label>
+                                    <input type="text" class="form-input" placeholder="e.g., ubuntu, admin"
+                                           value="${server.ssh_user || ''}"
+                                           onchange="updateServerField('${stepId}', ${server.id}, 'ssh_user', this.value)">
+                                    <span style="color: var(--color-text-muted); font-size: 0.75rem;">User with sudo privileges</span>
+                                </div>
                             ` : ''}
-                        </div>
-                        ${purposeOptions}
-                        <div class="form-row">
+
+                            <!-- SSH Authentication Method -->
                             <div class="form-group">
-                                <label class="form-label">Hostname / IP</label>
-                                <input type="text" class="form-input" placeholder="10.0.0.20"
-                                       value="${server.hostname || ''}"
-                                       onchange="updateServerField('${stepId}', ${server.id}, 'hostname', this.value)">
+                                <label class="form-label">Authentication Method</label>
+                                <select class="form-select" onchange="updateServerField('${stepId}', ${server.id}, 'ssh_auth_type', this.value); renderServers('${stepId}');">
+                                    <option value="password" ${sshAuthType === 'password' ? 'selected' : ''}>Password Authentication</option>
+                                    <option value="key" ${sshAuthType === 'key' ? 'selected' : ''}>SSH Private Key</option>
+                                </select>
                             </div>
-                            <div class="form-group">
-                                <label class="form-label">SSH Port</label>
-                                <input type="number" class="form-input" placeholder="22"
-                                       value="${server.ssh_port || 22}"
-                                       onchange="updateServerField('${stepId}', ${server.id}, 'ssh_port', parseInt(this.value))">
-                            </div>
+
+                            ${authFields}
+                            ${sudoPasswordField}
                         </div>
-
-                        <!-- SSH Connection Settings -->
-                        <div class="form-group">
-                            <label class="form-label">SSH User Type</label>
-                            <div class="radio-group horizontal">
-                                <label class="radio-option ${sshUserType === 'root' ? 'selected' : ''}"
-                                       onclick="updateServerField('${stepId}', ${server.id}, 'ssh_user_type', 'root'); updateServerField('${stepId}', ${server.id}, 'ssh_user', 'root'); renderServers('${stepId}');">
-                                    <input type="radio" name="user_type_${server.id}" value="root" ${sshUserType === 'root' ? 'checked' : ''}>
-                                    <div class="radio-option-content">
-                                        <div class="radio-option-label">Root User</div>
-                                        <div class="radio-option-desc">Direct root access</div>
-                                    </div>
-                                </label>
-                                <label class="radio-option ${sshUserType === 'sudo' ? 'selected' : ''}"
-                                       onclick="updateServerField('${stepId}', ${server.id}, 'ssh_user_type', 'sudo'); renderServers('${stepId}');">
-                                    <input type="radio" name="user_type_${server.id}" value="sudo" ${sshUserType === 'sudo' ? 'checked' : ''}>
-                                    <div class="radio-option-content">
-                                        <div class="radio-option-label">Sudo User</div>
-                                        <div class="radio-option-desc">Escalate to root</div>
-                                    </div>
-                                </label>
-                            </div>
-                        </div>
-
-                        ${sshUserType === 'sudo' ? `
-                            <div class="form-group">
-                                <label class="form-label">Username</label>
-                                <input type="text" class="form-input" placeholder="e.g., ubuntu, admin"
-                                       value="${server.ssh_user || ''}"
-                                       onchange="updateServerField('${stepId}', ${server.id}, 'ssh_user', this.value)">
-                                <span style="color: var(--gray-500); font-size: 0.75rem;">User with sudo privileges</span>
-                            </div>
-                        ` : ''}
-
-                        <!-- SSH Authentication Method -->
-                        <div class="form-group">
-                            <label class="form-label">Authentication Method</label>
-                            <select class="form-select" onchange="updateServerField('${stepId}', ${server.id}, 'ssh_auth_type', this.value); renderServers('${stepId}');">
-                                <option value="password" ${sshAuthType === 'password' ? 'selected' : ''}>Password Authentication</option>
-                                <option value="key" ${sshAuthType === 'key' ? 'selected' : ''}>SSH Private Key</option>
-                            </select>
-                        </div>
-
-                        ${authFields}
-                        ${sudoPasswordField}
                     </div>
                 `;
             }).join('');

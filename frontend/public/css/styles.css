@@ -158,20 +158,30 @@
   --color-bg: #0f172a;
   --color-bg-card: #1e293b;
   --color-bg-elevated: #334155;
-  --color-text-primary: #f1f5f9;
-  --color-text-secondary: #cbd5e1;
+  --color-text-primary: #f8fafc;
+  --color-text-secondary: #e2e8f0;
   --color-text-muted: #94a3b8;
-  --color-border: #334155;
-  --color-border-light: #1e293b;
+  --color-border: #475569;
+  --color-border-light: #334155;
 
-  /* Adjusted grays for dark mode */
+  /* Adjusted grays for dark mode - improved contrast */
   --color-gray-50: #1e293b;
   --color-gray-100: #334155;
   --color-gray-200: #475569;
   --color-gray-300: #64748b;
-  --color-gray-700: #e2e8f0;
-  --color-gray-800: #f1f5f9;
-  --color-gray-900: #f8fafc;
+  --color-gray-400: #94a3b8;
+  --color-gray-500: #cbd5e1;
+  --color-gray-600: #e2e8f0;
+  --color-gray-700: #f1f5f9;
+  --color-gray-800: #f8fafc;
+  --color-gray-900: #ffffff;
+
+  /* Primary colors for dark mode - better visibility */
+  --color-primary-50: rgba(102, 126, 234, 0.15);
+  --color-primary-100: rgba(102, 126, 234, 0.25);
+  --color-primary-200: rgba(102, 126, 234, 0.35);
+  --color-primary-300: #818cf8;
+  --color-primary-400: #a5b4fc;
 
   /* Adjusted shadows for dark mode */
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
@@ -184,19 +194,28 @@
     --color-bg: #0f172a;
     --color-bg-card: #1e293b;
     --color-bg-elevated: #334155;
-    --color-text-primary: #f1f5f9;
-    --color-text-secondary: #cbd5e1;
+    --color-text-primary: #f8fafc;
+    --color-text-secondary: #e2e8f0;
     --color-text-muted: #94a3b8;
-    --color-border: #334155;
-    --color-border-light: #1e293b;
+    --color-border: #475569;
+    --color-border-light: #334155;
 
     --color-gray-50: #1e293b;
     --color-gray-100: #334155;
     --color-gray-200: #475569;
     --color-gray-300: #64748b;
-    --color-gray-700: #e2e8f0;
-    --color-gray-800: #f1f5f9;
-    --color-gray-900: #f8fafc;
+    --color-gray-400: #94a3b8;
+    --color-gray-500: #cbd5e1;
+    --color-gray-600: #e2e8f0;
+    --color-gray-700: #f1f5f9;
+    --color-gray-800: #f8fafc;
+    --color-gray-900: #ffffff;
+
+    --color-primary-50: rgba(102, 126, 234, 0.15);
+    --color-primary-100: rgba(102, 126, 234, 0.25);
+    --color-primary-200: rgba(102, 126, 234, 0.35);
+    --color-primary-300: #818cf8;
+    --color-primary-400: #a5b4fc;
 
     --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
     --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
