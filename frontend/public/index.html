@@ -3008,16 +3008,32 @@
 
         // ==================== EXECUTION ====================
         // DEMO MODE FLAG - Set to false to use real API calls
-        const DEMO_MODE = true;
+        // Set to false for production deployments
+        const DEMO_MODE = false;
 
         async function executeStep(stepId) {
             const step = DEPLOYMENT_STEPS.find(s => s.id === stepId);
             const servers = state.servers[stepId] || [];
 
-            // Validation - only check hostname in demo mode
+            // Validation - check hostname
             if (servers.length === 0 || servers.some(s => !s.hostname)) {
                 showResult(stepId, 'error', 'Please fill in at least the hostname/IP for all servers.');
                 return;
+            }
+
+            // Production validation - check authentication credentials
+            if (!DEMO_MODE) {
+                for (const server of servers) {
+                    const authType = server.ssh_auth_type || 'password';
+                    if (authType === 'password' && !server.password) {
+                        showResult(stepId, 'error', `Please provide SSH password for server ${server.hostname}`);
+                        return;
+                    }
+                    if (authType === 'key' && !server.ssh_key) {
+                        showResult(stepId, 'error', `Please provide SSH private key for server ${server.hostname}`);
+                        return;
+                    }
+                }
             }
 
             // SSL-specific validation (for both ssl and loadbalancer steps)
