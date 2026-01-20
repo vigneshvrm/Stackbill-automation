@@ -2705,11 +2705,20 @@
             }
         }
 
+        // Track collapsed state for server cards
+        const collapsedServerCards = new Set();
+
         // Toggle server card collapse/expand
         function toggleServerCard(serverId) {
             const card = document.getElementById(`server-card-${serverId}`);
             if (card) {
                 card.classList.toggle('collapsed');
+                // Track the collapsed state
+                if (card.classList.contains('collapsed')) {
+                    collapsedServerCards.add(serverId);
+                } else {
+                    collapsedServerCards.delete(serverId);
+                }
             }
         }
 
@@ -2832,8 +2841,11 @@
                 // Summary for collapsed state
                 const serverSummary = server.hostname ? `${server.hostname}:${server.ssh_port || 22}` : 'Not configured';
 
+                // Check if this card should be collapsed (preserve state during re-render)
+                const isCollapsed = collapsedServerCards.has(server.id);
+
                 return `
-                    <div class="server-card" id="server-card-${server.id}">
+                    <div class="server-card ${isCollapsed ? 'collapsed' : ''}" id="server-card-${server.id}">
                         <div class="server-card-header" onclick="toggleServerCard(${server.id})">
                             <div class="server-role">
                                 <span class="server-toggle-icon">&#9660;</span>
