@@ -432,6 +432,42 @@
             box-shadow: var(--shadow-md);
         }
 
+        /* Mode Card - Deployment Mode Selection */
+        .mode-card {
+            flex: 1;
+            min-width: 200px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            cursor: pointer;
+            padding: 16px;
+            border-radius: 10px;
+            border: 2px solid var(--color-border);
+            background: var(--color-bg-card);
+            transition: all 0.2s;
+        }
+
+        .mode-card:hover {
+            border-color: var(--color-primary-300);
+        }
+
+        .mode-card.selected {
+            border-color: var(--color-primary-500);
+            background: var(--color-primary-50);
+        }
+
+        .mode-card-title {
+            font-weight: 600;
+            color: var(--color-text-primary);
+            font-size: 0.95rem;
+        }
+
+        .mode-card-desc {
+            font-size: 0.8rem;
+            color: var(--color-text-muted);
+            margin-top: 4px;
+        }
+
         /* Radio Group - Professional SSH Options */
         .radio-group {
             display: flex;
@@ -2415,23 +2451,23 @@
                 formHtml = `
                     <!-- Deployment Mode Selection -->
                     <div class="form-section" style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%); padding: 20px; border-radius: 12px; border: 2px solid rgba(102, 126, 234, 0.2); margin-bottom: 20px;">
-                        <div class="form-section-title" style="color: var(--primary); font-size: 1rem; margin-bottom: 12px;">&#9881; Deployment Mode</div>
-                        <p style="color: var(--gray-600); font-size: 0.85rem; margin-bottom: 16px;">
+                        <div class="form-section-title" style="color: var(--color-primary-500); font-size: 1rem; margin-bottom: 12px;">&#9881; Deployment Mode</div>
+                        <p style="color: var(--color-text-secondary); font-size: 0.85rem; margin-bottom: 16px;">
                             Choose how you want to proceed with the deployment after environment check.
                         </p>
                         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-                            <label style="flex: 1; min-width: 200px; display: flex; align-items: flex-start; gap: 12px; cursor: pointer; padding: 16px; border-radius: 10px; border: 2px solid ${state.automationMode === 'manual' ? 'var(--primary)' : 'var(--gray-200)'}; background: ${state.automationMode === 'manual' ? 'white' : 'var(--gray-50)'}; transition: all 0.2s;">
+                            <label class="mode-card ${state.automationMode === 'manual' ? 'selected' : ''}">
                                 <input type="radio" name="deploymentMode" value="manual" ${state.automationMode === 'manual' ? 'checked' : ''} onchange="setAutomationMode('manual')" style="margin-top: 3px;">
                                 <div>
-                                    <div style="font-weight: 600; color: var(--gray-800); font-size: 0.95rem;">&#128221; Step-by-Step</div>
-                                    <div style="font-size: 0.8rem; color: var(--gray-500); margin-top: 4px;">Review and confirm each deployment step manually. Recommended for first-time setup.</div>
+                                    <div class="mode-card-title">&#128221; Step-by-Step</div>
+                                    <div class="mode-card-desc">Review and confirm each deployment step manually. Recommended for first-time setup.</div>
                                 </div>
                             </label>
-                            <label style="flex: 1; min-width: 200px; display: flex; align-items: flex-start; gap: 12px; cursor: pointer; padding: 16px; border-radius: 10px; border: 2px solid ${state.automationMode === 'auto' ? 'var(--primary)' : 'var(--gray-200)'}; background: ${state.automationMode === 'auto' ? 'white' : 'var(--gray-50)'}; transition: all 0.2s;">
+                            <label class="mode-card ${state.automationMode === 'auto' ? 'selected' : ''}">
                                 <input type="radio" name="deploymentMode" value="auto" ${state.automationMode === 'auto' ? 'checked' : ''} onchange="setAutomationMode('auto')" style="margin-top: 3px;">
                                 <div>
-                                    <div style="font-weight: 600; color: var(--gray-800); font-size: 0.95rem;">&#128640; Auto-Complete</div>
-                                    <div style="font-size: 0.8rem; color: var(--gray-500); margin-top: 4px;">Automatically proceed through all steps after environment check passes.</div>
+                                    <div class="mode-card-title">&#128640; Auto-Complete</div>
+                                    <div class="mode-card-desc">Automatically proceed through all steps after environment check passes.</div>
                                 </div>
                             </label>
                         </div>
