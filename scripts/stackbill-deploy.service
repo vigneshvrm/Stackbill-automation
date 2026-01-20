@@ -29,7 +29,8 @@ Environment=PORT=3000
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+# ProtectHome must be disabled for Ansible to access SSH keys and create temp files
+ProtectHome=false
 ReadWritePaths=/opt/stackbill-deploy/data /opt/stackbill-deploy/logs /opt/stackbill-deploy/backend/.inventory /opt/stackbill-deploy/backups
 
 # Resource limits
