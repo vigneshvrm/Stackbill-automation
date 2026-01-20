@@ -2736,7 +2736,7 @@
             container.innerHTML = servers.map((server, index) => {
                 // Get display label for purpose/role badge
                 const badgeLabel = stepId === 'env-check'
-                    ? (SERVER_PURPOSES.find(p => p.value === server.purpose)?.label || 'VM')
+                    ? (SERVER_PURPOSES.find(p => p.value === server.purpose)?.label || 'Not Selected')
                     : (server.role ? server.role.charAt(0).toUpperCase() + server.role.slice(1) : 'Server');
 
                 // Get SSH auth and user type labels for display
@@ -2778,12 +2778,28 @@
                 // EDITABLE card for env-check
                 let purposeOptions = '';
                 if (stepId === 'env-check') {
+                    // Get purposes already used by other servers (excluding this one)
+                    const usedPurposes = servers
+                        .filter(s => s.id !== server.id && s.purpose)
+                        .map(s => s.purpose);
+
+                    // Purposes that can have multiple selections (k8s master/worker)
+                    const multiSelectPurposes = ['k8s-master', 'k8s-worker'];
+
+                    // Filter available purposes: show if not used OR if it's a multi-select purpose OR if it's the current selection
+                    const availablePurposes = SERVER_PURPOSES.filter(p =>
+                        !usedPurposes.includes(p.value) ||
+                        multiSelectPurposes.includes(p.value) ||
+                        server.purpose === p.value
+                    );
+
                     purposeOptions = `
                         <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label">Server Purpose</label>
                                 <select class="form-select" onchange="updateServerField('${stepId}', ${server.id}, 'purpose', this.value); updateServerField('${stepId}', ${server.id}, 'role', this.value);">
-                                    ${SERVER_PURPOSES.map(p => `
+                                    <option value="" ${!server.purpose ? 'selected' : ''}>-- Select Purpose --</option>
+                                    ${availablePurposes.map(p => `
                                         <option value="${p.value}" ${server.purpose === p.value ? 'selected' : ''}>${p.label}</option>
                                     `).join('')}
                                 </select>
@@ -2947,6 +2963,11 @@
             const server = state.servers[stepId]?.find(s => s.id === serverId);
             if (server) {
                 server[field] = value;
+
+                // Re-render servers when purpose changes (to update badge and filter options)
+                if (field === 'purpose') {
+                    renderServers(stepId);
+                }
 
                 // Debounce database save (wait 1 second after last change)
                 clearTimeout(serverSaveTimer);
