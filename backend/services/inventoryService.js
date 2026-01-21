@@ -137,8 +137,9 @@ function generateInventoryContent(servers, playbookType) {
     if (arbiterServers.length > 0) content += 'arbiter\n';
 
   } else if (playbookType === 'kubernetes') {
-    const masterServers = servers.filter(s => s.role === 'master');
-    const workerServers = servers.filter(s => s.role === 'worker');
+    // Support both 'master'/'worker' and 'k8s-master'/'k8s-worker' role names
+    const masterServers = servers.filter(s => s.role === 'master' || s.role === 'k8s-master');
+    const workerServers = servers.filter(s => s.role === 'worker' || s.role === 'k8s-worker');
 
     if (masterServers.length > 0) {
       content += '[master]\n';
