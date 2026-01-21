@@ -3219,6 +3219,9 @@
             submitBtn.innerHTML = `<div class="spinner"></div> ${actionText}`;
             progressSection.classList.add('visible');
             taskList.innerHTML = '';
+            // Reset progress bar to 0% at start
+            progressBar.style.width = '0%';
+            progressPct.textContent = '0%';
 
             if (DEMO_MODE) {
                 // Simulate deployment with demo tasks
