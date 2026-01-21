@@ -3621,6 +3621,14 @@
             let currentTaskName = '';
             const failedHosts = new Set(); // Track which hosts have failed
 
+            // Create mapping from Ansible host names (server-0, server-1) to friendly names
+            const hostNameMap = {};
+            servers.forEach((server, idx) => {
+                const ansibleHostName = `server-${idx}`;
+                const friendlyName = server.name || server.purpose || server.role || ansibleHostName;
+                hostNameMap[ansibleHostName] = friendlyName;
+            });
+
             try {
                 // Include session ID in URL for logging traceability
                 const sessionParam = state.sessionId ? `&sessionId=${state.sessionId}` : '';
@@ -3675,7 +3683,8 @@
                                             updateProgress();
                                         }
                                     },
-                                    failedHosts);
+                                    failedHosts,
+                                    hostNameMap);
                             } catch (e) {
                                 console.error('Error parsing SSE:', e);
                             }
@@ -3693,8 +3702,11 @@
             }
         }
 
-        function handleStreamEvent(stepId, data, taskList, progressBar, progressPct, onTask, onComplete, failedHosts = null) {
+        function handleStreamEvent(stepId, data, taskList, progressBar, progressPct, onTask, onComplete, failedHosts = null, hostNameMap = {}) {
             const step = DEPLOYMENT_STEPS.find(s => s.id === stepId);
+
+            // Helper to get friendly host name
+            const getFriendlyHostName = (host) => hostNameMap[host] || host;
 
             if (data.type === 'task') {
                 onTask(data.task);
@@ -3707,11 +3719,13 @@
                 const statusClass = data.status === 'ok' || data.status === 'changed' ? 'success' :
                                    data.status === 'fatal' ? 'error' :
                                    data.status === 'skipping' ? 'skipped' : 'pending';
-                updateLastTask(taskList, data.task, statusClass, icon, data.host);
+                // Pass friendly host name for display
+                const friendlyHost = data.host ? getFriendlyHostName(data.host) : null;
+                updateLastTask(taskList, data.task, statusClass, icon, friendlyHost);
 
-                // Track failed hosts for better error messaging
+                // Track failed hosts for better error messaging (store friendly name)
                 if (data.status === 'fatal' && data.host && failedHosts) {
-                    failedHosts.add(data.host);
+                    failedHosts.add(getFriendlyHostName(data.host));
                 }
 
                 // Handle credentials
