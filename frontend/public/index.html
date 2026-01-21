@@ -623,8 +623,13 @@
         }
 
         .task-list {
-            max-height: 300px;
+            max-height: 350px;
             overflow-y: auto;
+        }
+
+        /* Task Item Wrapper */
+        .task-item-wrapper {
+            margin-bottom: 2px;
         }
 
         .task-item {
@@ -633,8 +638,31 @@
             gap: var(--space-2);
             padding: var(--space-2) var(--space-3);
             border-radius: var(--radius-md);
-            margin-bottom: var(--space-1);
             font-size: var(--font-size-sm);
+        }
+
+        .task-icon {
+            flex-shrink: 0;
+            width: 20px;
+            text-align: center;
+            font-size: 1rem;
+        }
+
+        .task-name {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .task-badge {
+            flex-shrink: 0;
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: var(--color-gray-100);
+            color: var(--color-text-muted);
         }
 
         .task-item.success {
@@ -642,9 +670,19 @@
             color: var(--color-success-500);
         }
 
+        .task-item.success .task-badge {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--color-success-600);
+        }
+
         .task-item.error {
             background: rgba(239, 68, 68, 0.1);
             color: var(--color-error-500);
+        }
+
+        .task-item.error .task-badge {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--color-error-600);
         }
 
         .task-item.pending {
@@ -652,9 +690,40 @@
             color: var(--color-text-secondary);
         }
 
+        .task-item.running {
+            background: rgba(102, 126, 234, 0.1);
+            color: var(--color-primary-600);
+        }
+
+        .task-item.running .task-icon {
+            animation: spin 1s linear infinite;
+        }
+
+        .task-item.running .task-badge {
+            background: rgba(102, 126, 234, 0.15);
+            color: var(--color-primary-600);
+        }
+
         .task-item.skipped {
             background: var(--color-gray-100);
             color: var(--color-gray-400);
+        }
+
+        .task-item.skipped .task-badge {
+            background: var(--color-gray-200);
+            color: var(--color-gray-500);
+        }
+
+        .task-failure-details {
+            display: none;
+            padding: 4px 14px 8px 44px;
+            font-size: 0.8rem;
+            color: var(--color-error-500);
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
         }
 
         /* Credentials Section */
@@ -2587,17 +2656,6 @@
                             <span>+</span> Add VM
                         </button>
                     </div>
-                    <div class="form-section" style="background: rgba(102, 126, 234, 0.05); padding: 16px; border-radius: 10px; border: 1px solid rgba(102, 126, 234, 0.2);">
-                        <div class="form-section-title" style="color: var(--primary);">&#9989; What will be checked:</div>
-                        <ul style="color: var(--gray-600); font-size: 0.9rem; margin: 0; padding-left: 20px;">
-                            <li>Ubuntu version (22.04+ required)</li>
-                            <li>CPU, Memory, and Disk resources</li>
-                            <li>Internet connectivity (ping, DNS)</li>
-                            <li>Access to StackBill S3 repository</li>
-                            <li>Firewall status and port availability</li>
-                            <li>APT package manager functionality</li>
-                        </ul>
-                    </div>
                 `;
             }
 
@@ -3175,18 +3233,24 @@
         async function simulateDeployment(stepId, step, servers, taskList, progressBar, progressPct, submitBtn) {
             const demoTasks = getDemoTasks(stepId, servers);
             const totalTasks = demoTasks.length;
+            const totalServers = servers.length;
             let completedTasks = 0;
 
             for (const task of demoTasks) {
                 // Add task to list (pending)
-                addTaskItem(taskList, task.name, 'pending', '&#9711;');
+                addTaskItem(taskList, task.name, totalServers);
                 await sleep(300 + Math.random() * 400);
 
-                // Complete the task
-                completedTasks++;
-                updateLastTask(taskList, task.name, 'success', '&#10003;');
+                // Simulate all servers completing successfully
+                const taskData = {
+                    success: new Set(servers.map((s, i) => s.name || s.purpose || s.role || `server-${i}`)),
+                    failed: new Set(),
+                    skipped: new Set()
+                };
+                updateTaskItem(taskList, task.name, taskData, totalServers);
 
                 // Update progress
+                completedTasks++;
                 const pct = Math.round((completedTasks / totalTasks) * 100);
                 progressBar.style.width = `${pct}%`;
                 progressPct.textContent = `${pct}%`;
@@ -3620,6 +3684,7 @@
             let totalTasks = 0;
             let currentTaskName = '';
             const failedHosts = new Set(); // Track which hosts have failed
+            const totalServers = servers.length;
 
             // Create mapping from Ansible host names (server-0, server-1) to friendly names
             const hostNameMap = {};
@@ -3628,6 +3693,9 @@
                 const friendlyName = server.name || server.purpose || server.role || ansibleHostName;
                 hostNameMap[ansibleHostName] = friendlyName;
             });
+
+            // Track per-task server results: taskName -> { success: Set, failed: Set, skipped: Set }
+            const taskResults = new Map();
 
             try {
                 // Include session ID in URL for logging traceability
@@ -3687,7 +3755,9 @@
                                         }
                                     },
                                     failedHosts,
-                                    hostNameMap);
+                                    hostNameMap,
+                                    taskResults,
+                                    totalServers);
                             } catch (e) {
                                 console.error('Error parsing SSE:', e);
                             }
@@ -3705,7 +3775,7 @@
             }
         }
 
-        function handleStreamEvent(stepId, data, taskList, progressBar, progressPct, onTask, onComplete, failedHosts = null, hostNameMap = {}) {
+        function handleStreamEvent(stepId, data, taskList, progressBar, progressPct, onTask, onComplete, failedHosts = null, hostNameMap = {}, taskResults = null, totalServers = 1) {
             const step = DEPLOYMENT_STEPS.find(s => s.id === stepId);
 
             // Helper to get friendly host name
@@ -3713,22 +3783,49 @@
 
             if (data.type === 'task') {
                 onTask(data.task);
-                addTaskItem(taskList, data.task, 'pending', '&#9711;');
+                // Add task item with total server count for badge display
+                addTaskItem(taskList, data.task, totalServers);
+
+                // Initialize task results tracking
+                if (taskResults && !taskResults.has(data.task)) {
+                    taskResults.set(data.task, {
+                        success: new Set(),
+                        failed: new Set(),
+                        skipped: new Set()
+                    });
+                }
             } else if (data.type === 'task_result') {
                 onComplete(data.task);
-                const icon = data.status === 'ok' || data.status === 'changed' ? '&#10003;' :
-                             data.status === 'fatal' ? '&#10007;' :
-                             data.status === 'skipping' ? '&#8594;' : '&#9711;';
-                const statusClass = data.status === 'ok' || data.status === 'changed' ? 'success' :
-                                   data.status === 'fatal' ? 'error' :
-                                   data.status === 'skipping' ? 'skipped' : 'pending';
-                // Pass friendly host name for display
-                const friendlyHost = data.host ? getFriendlyHostName(data.host) : null;
-                updateLastTask(taskList, data.task, statusClass, icon, friendlyHost);
 
-                // Track failed hosts for better error messaging (store friendly name)
-                if (data.status === 'fatal' && data.host && failedHosts) {
-                    failedHosts.add(getFriendlyHostName(data.host));
+                const friendlyHost = data.host ? getFriendlyHostName(data.host) : null;
+
+                // Update per-task tracking
+                if (taskResults) {
+                    if (!taskResults.has(data.task)) {
+                        taskResults.set(data.task, {
+                            success: new Set(),
+                            failed: new Set(),
+                            skipped: new Set()
+                        });
+                    }
+
+                    const taskData = taskResults.get(data.task);
+
+                    if (data.status === 'ok' || data.status === 'changed') {
+                        if (friendlyHost) taskData.success.add(friendlyHost);
+                    } else if (data.status === 'fatal') {
+                        if (friendlyHost) taskData.failed.add(friendlyHost);
+                    } else if (data.status === 'skipping') {
+                        if (friendlyHost) taskData.skipped.add(friendlyHost);
+                    }
+
+                    // Update task item display with current counts
+                    updateTaskItem(taskList, data.task, taskData, totalServers);
+                }
+
+                // Track failed hosts for final error messaging
+                if (data.status === 'fatal' && friendlyHost && failedHosts) {
+                    failedHosts.add(friendlyHost);
                 }
 
                 // Handle credentials
@@ -3777,29 +3874,101 @@
             }
         }
 
-        function addTaskItem(container, taskName, statusClass, icon) {
-            const item = document.createElement('div');
-            item.className = `task-item ${statusClass}`;
-            item.innerHTML = `<span>${icon}</span> ${taskName}`;
-            container.appendChild(item);
+        /**
+         * Create a task ID from task name for DOM lookup
+         */
+        function getTaskId(taskName) {
+            return `task-${taskName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
+        }
+
+        /**
+         * Add a new task item to the task list (called when TASK event received)
+         */
+        function addTaskItem(container, taskName, totalServers) {
+            const taskId = getTaskId(taskName);
+
+            // Check if task already exists
+            if (container.querySelector(`[data-task-id="${taskId}"]`)) {
+                return;
+            }
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'task-item-wrapper';
+            wrapper.dataset.taskId = taskId;
+
+            const badgeText = totalServers === 1 ? '[Pending]' : `[0/${totalServers}]`;
+
+            wrapper.innerHTML = `
+                <div class="task-item running">
+                    <span class="task-icon">&#9711;</span>
+                    <span class="task-name">${taskName}</span>
+                    <span class="task-badge">${badgeText}</span>
+                </div>
+                <div class="task-failure-details"></div>
+            `;
+
+            container.appendChild(wrapper);
             container.scrollTop = container.scrollHeight;
         }
 
-        function updateLastTask(container, taskName, statusClass, icon, host = null) {
-            const items = container.querySelectorAll('.task-item');
-            if (items.length > 0) {
-                const last = items[items.length - 1];
-                // Don't overwrite an error status with a success status
-                // This ensures failures are visible even when other hosts succeed
-                if (last.classList.contains('error') && statusClass !== 'error') {
-                    // Keep the error status, but maybe append host info
-                    return;
+        /**
+         * Update a task item with server completion results
+         */
+        function updateTaskItem(container, taskName, taskData, totalServers) {
+            const taskId = getTaskId(taskName);
+            const wrapper = container.querySelector(`[data-task-id="${taskId}"]`);
+
+            if (!wrapper) return;
+
+            const taskItem = wrapper.querySelector('.task-item');
+            const icon = wrapper.querySelector('.task-icon');
+            const badge = wrapper.querySelector('.task-badge');
+            const failureDetails = wrapper.querySelector('.task-failure-details');
+
+            const successCount = taskData.success.size;
+            const failedCount = taskData.failed.size;
+            const skippedCount = taskData.skipped ? taskData.skipped.size : 0;
+            const completedCount = successCount + failedCount + skippedCount;
+            const isComplete = completedCount >= totalServers;
+
+            // Determine status
+            if (failedCount > 0) {
+                // Has failures
+                taskItem.className = 'task-item error';
+                icon.innerHTML = '&#10007;';
+                if (totalServers === 1) {
+                    badge.textContent = '[Failed]';
+                } else {
+                    badge.textContent = `[${successCount}/${totalServers}]`;
                 }
-                last.className = `task-item ${statusClass}`;
-                // Show host info for errors to help identify which server failed
-                const hostInfo = (statusClass === 'error' && host) ? ` [${host}]` : '';
-                last.innerHTML = `<span>${icon}</span> ${taskName}${hostInfo}`;
+                failureDetails.innerHTML = `└─ Failed: ${Array.from(taskData.failed).join(', ')}`;
+                failureDetails.style.display = 'block';
+            } else if (skippedCount === totalServers) {
+                // All skipped
+                taskItem.className = 'task-item skipped';
+                icon.innerHTML = '&#8594;';
+                badge.textContent = totalServers === 1 ? '[Skipped]' : `[Skipped]`;
+            } else if (isComplete) {
+                // All success
+                taskItem.className = 'task-item success';
+                icon.innerHTML = '&#10003;';
+                if (totalServers === 1) {
+                    badge.textContent = '[Done]';
+                } else {
+                    badge.textContent = `[${totalServers}/${totalServers}]`;
+                }
+            } else {
+                // Still running
+                taskItem.className = 'task-item running';
+                icon.innerHTML = '&#9711;';
+                if (totalServers === 1) {
+                    badge.textContent = '[Running...]';
+                } else {
+                    badge.textContent = `[${completedCount}/${totalServers}]`;
+                }
             }
+
+            container.scrollTop = container.scrollHeight;
         }
 
         function renderCredentials(stepId) {
