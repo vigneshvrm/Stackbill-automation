@@ -3591,13 +3591,15 @@
             let currentTaskName = '';
 
             try {
-                const response = await fetch(`/api/playbook/${stepId}?stream=true`, {
+                // Include session ID in URL for logging traceability
+                const sessionParam = state.sessionId ? `&sessionId=${state.sessionId}` : '';
+                const response = await fetch(`/api/playbook/${stepId}?stream=true${sessionParam}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Accept': 'text/event-stream'
                     },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify({ ...payload, sessionId: state.sessionId })
                 });
 
                 if (!response.ok) {

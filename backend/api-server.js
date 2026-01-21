@@ -66,8 +66,11 @@ function log(level, message, meta = {}) {
   rotateLogsIfNeeded();
 
   const timestamp = new Date().toISOString();
+  // Extract sessionId for prominent display if present
+  const sessionId = meta.sessionId || meta.session_id || null;
+  const sessionPrefix = sessionId ? `[session:${sessionId}] ` : '';
   const metaStr = Object.keys(meta).length > 0 ? ` ${JSON.stringify(meta)}` : '';
-  const logEntry = `[${timestamp}] [${level}] ${message}${metaStr}\n`;
+  const logEntry = `[${timestamp}] [${level}] ${sessionPrefix}${message}${metaStr}\n`;
 
   // Write to file
   try {
@@ -79,7 +82,8 @@ function log(level, message, meta = {}) {
   // Also write to console in development
   if (process.env.NODE_ENV !== 'production') {
     const color = level === 'ERROR' ? '\x1b[31m' : level === 'WARN' ? '\x1b[33m' : level === 'INFO' ? '\x1b[36m' : '\x1b[37m';
-    console.log(`${color}[${level}]\x1b[0m ${message}${metaStr}`);
+    const sessionColor = sessionId ? `\x1b[35m[${sessionId}]\x1b[0m ` : '';
+    console.log(`${color}[${level}]\x1b[0m ${sessionColor}${message}${metaStr}`);
   }
 }
 
@@ -91,12 +95,24 @@ const logger = {
   debug: (message, meta) => log(LOG_LEVELS.DEBUG, message, meta)
 };
 
+// Extract session ID from request (query, body, or URL params)
+function extractSessionId(req) {
+  return req.query.sessionId ||
+         req.query.session_id ||
+         req.body?.sessionId ||
+         req.body?.session_id ||
+         req.params?.sessionId ||
+         req.params?.id ||  // For /api/sessions/:id routes
+         null;
+}
+
 // Request logging middleware
 function requestLogger(req, res, next) {
   const start = Date.now();
 
   res.on('finish', () => {
     const duration = Date.now() - start;
+    const sessionId = extractSessionId(req);
     const logData = {
       method: req.method,
       url: req.originalUrl,
@@ -104,6 +120,9 @@ function requestLogger(req, res, next) {
       duration: `${duration}ms`,
       ip: req.ip || req.connection.remoteAddress
     };
+    if (sessionId) {
+      logData.sessionId = sessionId;
+    }
 
     if (res.statusCode >= 400) {
       logger.warn(`HTTP ${res.statusCode} ${req.method} ${req.originalUrl}`, logData);
@@ -330,8 +349,9 @@ async function generateInventory(servers, playbookType) {
 }
 
 // Execute Ansible playbook with streaming support
-function executePlaybook(playbookType, inventoryPath, playbookPath, extraVars = {}, onOutput = null) {
+function executePlaybook(playbookType, inventoryPath, playbookPath, extraVars = {}, onOutput = null, sessionId = null) {
   return new Promise((resolve, reject) => {
+    const logMeta = sessionId ? { sessionId } : {};
     // Convert paths to WSL format if on Windows
     let finalInventoryPath = inventoryPath;
     let finalPlaybookPath = playbookPath;
@@ -387,11 +407,12 @@ function executePlaybook(playbookType, inventoryPath, playbookPath, extraVars = 
     };
     
     logger.info(`Executing playbook: ${playbookType}`, {
+      ...logMeta,
       playbookPath: finalPlaybookPath,
       inventoryPath: finalInventoryPath,
       extraVars: Object.keys(extraVars)
     });
-    logger.debug(`Full command: ${command}`);
+    logger.debug(`Full command: ${command}`, logMeta);
     
     let child;
     if (IS_WINDOWS) {
@@ -611,7 +632,7 @@ function executePlaybook(playbookType, inventoryPath, playbookPath, extraVars = 
       // 4 = unreachable hosts
       // Other = errors
       if (code === 0) {
-        logger.info(`Playbook ${playbookType} completed successfully`, { exitCode: code });
+        logger.info(`Playbook ${playbookType} completed successfully`, { ...logMeta, exitCode: code });
         resolve({
           success: true,
           stdout,
@@ -624,7 +645,7 @@ function executePlaybook(playbookType, inventoryPath, playbookPath, extraVars = 
         const errorDescription = code === 2 ? 'One or more tasks failed' :
                                  code === 4 ? 'One or more hosts unreachable' :
                                  `Process exited with code ${code}`;
-        logger.error(`Playbook ${playbookType} failed`, { exitCode: code, error: errorMsg.substring(0, 500) });
+        logger.error(`Playbook ${playbookType} failed`, { ...logMeta, exitCode: code, error: errorMsg.substring(0, 500) });
         reject({
           success: false,
           error: errorDescription,
@@ -638,7 +659,7 @@ function executePlaybook(playbookType, inventoryPath, playbookPath, extraVars = 
     });
 
     child.on('error', (error) => {
-      logger.error(`Playbook ${playbookType} spawn error`, { error: error.message });
+      logger.error(`Playbook ${playbookType} spawn error`, { ...logMeta, error: error.message });
       reject({
         success: false,
         error: error.message,
@@ -673,30 +694,36 @@ async function cleanupInventory(inventoryId, servers = []) {
 
 // Helper function to handle streaming playbook execution
 async function executePlaybookStream(req, res, playbookType, playbookPath) {
+  // Extract session ID from request for logging
+  const sessionId = extractSessionId(req);
+  const logMeta = sessionId ? { sessionId } : {};
+
   try {
     const { servers, variables = {} } = req.body;
-    
+
     if (!servers || !Array.isArray(servers) || servers.length === 0) {
       return res.status(400).json({ error: 'Servers array is required' });
     }
-    
+
+    logger.info(`Starting playbook stream: ${playbookType}`, { ...logMeta, serverCount: servers.length });
+
     // Set up Server-Sent Events
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
-    
+
     const { inventoryId, inventoryPath } = await generateInventory(servers, playbookType);
-    
+
     const sendEvent = (data) => {
       res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
-    
+
     try {
       const result = await executePlaybook(playbookType, inventoryPath, playbookPath, variables, (output) => {
         sendEvent(output);
-      });
-      
+      }, sessionId);
+
       sendEvent({
         type: 'complete',
         success: true,
@@ -719,6 +746,7 @@ async function executePlaybookStream(req, res, playbookType, playbookPath) {
       res.end();
     }
   } catch (error) {
+    logger.error(`Playbook stream error: ${playbookType}`, { ...logMeta, error: error.message });
     res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
     res.end();
   }

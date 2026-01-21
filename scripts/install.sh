@@ -63,11 +63,11 @@ install_dependencies() {
     case $OS in
         ubuntu|debian)
             apt-get update
-            apt-get install -y curl wget git ansible python3-pip
+            apt-get install -y curl wget git ansible python3-pip sshpass
             ;;
         centos|rhel|rocky|almalinux)
             dnf install -y curl wget git epel-release
-            dnf install -y ansible python3-pip
+            dnf install -y ansible python3-pip sshpass
             ;;
         *)
             log_error "Unsupported OS: $OS"
