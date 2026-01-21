@@ -2824,9 +2824,22 @@
                     authFields = `
                         <div class="form-group">
                             <label class="form-label">SSH Password</label>
-                            <input type="password" class="form-input" placeholder="Enter SSH password"
-                                   value="${server.password || ''}"
-                                   onchange="updateServerField('${stepId}', ${server.id}, 'password', this.value)">
+                            <div class="password-input-wrapper">
+                                <input type="password" class="form-input" placeholder="Enter SSH password"
+                                       id="ssh-password-${server.id}"
+                                       value="${server.password || ''}"
+                                       onchange="updateServerField('${stepId}', ${server.id}, 'password', this.value)">
+                                <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('ssh-password-${server.id}', this)" title="Show/Hide password">
+                                    <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                    </svg>
+                                    <svg class="eye-off-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;">
+                                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
                     `;
                 } else {
@@ -2846,9 +2859,22 @@
                     sudoPasswordField = `
                         <div class="form-group">
                             <label class="form-label">Sudo Password</label>
-                            <input type="password" class="form-input" placeholder="Password for sudo escalation"
-                                   value="${server.sudo_password || ''}"
-                                   onchange="updateServerField('${stepId}', ${server.id}, 'sudo_password', this.value)">
+                            <div class="password-input-wrapper">
+                                <input type="password" class="form-input" placeholder="Password for sudo escalation"
+                                       id="sudo-password-${server.id}"
+                                       value="${server.sudo_password || ''}"
+                                       onchange="updateServerField('${stepId}', ${server.id}, 'sudo_password', this.value)">
+                                <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('sudo-password-${server.id}', this)" title="Show/Hide password">
+                                    <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                    </svg>
+                                    <svg class="eye-off-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;">
+                                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                                    </svg>
+                                </button>
+                            </div>
                             <span style="color: var(--gray-500); font-size: 0.75rem;">Leave blank if same as SSH password</span>
                         </div>
                     `;
@@ -3809,6 +3835,24 @@
             sidebar.classList.toggle('open');
             overlay.classList.toggle('open');
             renderSummary();
+        }
+
+        function togglePasswordVisibility(inputId, button) {
+            const input = document.getElementById(inputId);
+            if (!input) return;
+
+            const eyeIcon = button.querySelector('.eye-icon');
+            const eyeOffIcon = button.querySelector('.eye-off-icon');
+
+            if (input.type === 'password') {
+                input.type = 'text';
+                if (eyeIcon) eyeIcon.style.display = 'none';
+                if (eyeOffIcon) eyeOffIcon.style.display = 'block';
+            } else {
+                input.type = 'password';
+                if (eyeIcon) eyeIcon.style.display = 'block';
+                if (eyeOffIcon) eyeOffIcon.style.display = 'none';
+            }
         }
 
         function copyToClipboard(text, button) {
