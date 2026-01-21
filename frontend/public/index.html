@@ -3649,9 +3649,12 @@
                 const decoder = new TextDecoder();
                 let buffer = '';
 
-                function updateProgress() {
-                    // Cap at 100% until we get the complete event
-                    const pct = totalTasks > 0 ? Math.min(100, Math.round((completedTasks / totalTasks) * 100)) : 0;
+                function updateProgress(forceComplete = false) {
+                    // Cap at 99% until we get the actual complete event to avoid false 100%
+                    let pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+                    if (!forceComplete && pct >= 100) {
+                        pct = 99; // Show 99% max until playbook actually completes
+                    }
                     progressBar.style.width = `${pct}%`;
                     progressPct.textContent = `${pct}%`;
                 }
@@ -3740,6 +3743,10 @@
                 const submitBtn = document.getElementById(`submit-${stepId}`);
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = `<span>&#128640;</span> Deploy ${step.title}`;
+
+                // Set progress to 100% on completion
+                progressBar.style.width = '100%';
+                progressPct.textContent = '100%';
 
                 if (data.success) {
                     state.completedSteps.add(stepId);
