@@ -3593,6 +3593,7 @@
             let completedTasks = 0;
             let totalTasks = 0;
             let currentTaskName = '';
+            const failedHosts = new Set(); // Track which hosts have failed
 
             try {
                 // Include session ID in URL for logging traceability
@@ -3647,7 +3648,8 @@
                                             currentTaskName = ''; // Clear so we don't double-count
                                             updateProgress();
                                         }
-                                    });
+                                    },
+                                    failedHosts);
                             } catch (e) {
                                 console.error('Error parsing SSE:', e);
                             }
@@ -3665,7 +3667,7 @@
             }
         }
 
-        function handleStreamEvent(stepId, data, taskList, progressBar, progressPct, onTask, onComplete) {
+        function handleStreamEvent(stepId, data, taskList, progressBar, progressPct, onTask, onComplete, failedHosts = null) {
             const step = DEPLOYMENT_STEPS.find(s => s.id === stepId);
 
             if (data.type === 'task') {
@@ -3679,7 +3681,12 @@
                 const statusClass = data.status === 'ok' || data.status === 'changed' ? 'success' :
                                    data.status === 'fatal' ? 'error' :
                                    data.status === 'skipping' ? 'skipped' : 'pending';
-                updateLastTask(taskList, data.task, statusClass, icon);
+                updateLastTask(taskList, data.task, statusClass, icon, data.host);
+
+                // Track failed hosts for better error messaging
+                if (data.status === 'fatal' && data.host && failedHosts) {
+                    failedHosts.add(data.host);
+                }
 
                 // Handle credentials
                 if (data.credentialUpdate && data.credentialUpdate.service) {
@@ -3711,7 +3718,14 @@
                     renderStepCards();
                     renderSummary();
                 } else {
-                    showResult(stepId, 'error', data.error || 'Deployment failed. Check the task list for details.');
+                    // Build detailed error message with failed hosts
+                    let errorMsg = data.error || 'Deployment failed. Check the task list for details.';
+                    if (failedHosts && failedHosts.size > 0) {
+                        const hostList = Array.from(failedHosts).join(', ');
+                        errorMsg += `<br><br><strong>Failed servers:</strong> ${hostList}`;
+                        errorMsg += '<br><small>Check SSH credentials and connectivity for these servers.</small>';
+                    }
+                    showResult(stepId, 'error', errorMsg);
                 }
             }
         }
@@ -3724,12 +3738,20 @@
             container.scrollTop = container.scrollHeight;
         }
 
-        function updateLastTask(container, taskName, statusClass, icon) {
+        function updateLastTask(container, taskName, statusClass, icon, host = null) {
             const items = container.querySelectorAll('.task-item');
             if (items.length > 0) {
                 const last = items[items.length - 1];
+                // Don't overwrite an error status with a success status
+                // This ensures failures are visible even when other hosts succeed
+                if (last.classList.contains('error') && statusClass !== 'error') {
+                    // Keep the error status, but maybe append host info
+                    return;
+                }
                 last.className = `task-item ${statusClass}`;
-                last.innerHTML = `<span>${icon}</span> ${taskName}`;
+                // Show host info for errors to help identify which server failed
+                const hostInfo = (statusClass === 'error' && host) ? ` [${host}]` : '';
+                last.innerHTML = `<span>${icon}</span> ${taskName}${hostInfo}`;
             }
         }
 
