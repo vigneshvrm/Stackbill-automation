@@ -3084,6 +3084,10 @@
             const step = DEPLOYMENT_STEPS.find(s => s.id === stepId);
             const servers = state.servers[stepId] || [];
 
+            // Clear any previous error/success message and reset progress UI
+            hideResult(stepId);
+            resetProgressUI(stepId);
+
             // Validation - check hostname
             if (servers.length === 0 || servers.some(s => !s.hostname)) {
                 showResult(stepId, 'error', 'Please fill in at least the hostname/IP for all servers.');
@@ -3756,6 +3760,24 @@
                 <strong>${type === 'success' ? '&#10003; Success' : '&#10007; Error'}</strong>
                 <p>${message}</p>
             `;
+        }
+
+        function hideResult(stepId) {
+            const result = document.getElementById(`result-${stepId}`);
+            if (result) {
+                result.className = 'result-message';
+                result.innerHTML = '';
+            }
+        }
+
+        function resetProgressUI(stepId) {
+            const progressBar = document.getElementById(`progress-bar-${stepId}`);
+            const progressPct = document.getElementById(`progress-pct-${stepId}`);
+            const taskList = document.getElementById(`task-list-${stepId}`);
+
+            if (progressBar) progressBar.style.width = '0%';
+            if (progressPct) progressPct.textContent = '0%';
+            if (taskList) taskList.innerHTML = '';
         }
 
         // ==================== UTILITIES ====================
