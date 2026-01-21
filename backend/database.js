@@ -98,7 +98,8 @@ db.exec(`
     completed_at TEXT,
     status TEXT NOT NULL DEFAULT 'in_progress',
     current_step INTEGER DEFAULT 0,
-    auto_cleanup BOOLEAN DEFAULT 0,
+    auto_cleanup INTEGER DEFAULT 0,
+    automation_mode TEXT DEFAULT 'manual',
     notes TEXT
   );
 
@@ -202,7 +203,16 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_servers_step ON servers(session_id, step_id);
   CREATE INDEX IF NOT EXISTS idx_credentials_session ON credentials(session_id);
   CREATE INDEX IF NOT EXISTS idx_completed_steps_session ON completed_steps(session_id);
+`);
 
+// Migration: Add automation_mode column if it doesn't exist (for existing databases)
+try {
+  db.exec(`ALTER TABLE sessions ADD COLUMN automation_mode TEXT DEFAULT 'manual'`);
+} catch (e) {
+  // Column already exists, ignore error
+}
+
+db.exec(`
   -- Global settings table (deployment URLs, versions, etc.)
   CREATE TABLE IF NOT EXISTS global_settings (
     key TEXT PRIMARY KEY,
@@ -437,14 +447,16 @@ function listSessions() {
  * Update session
  */
 function updateSession(sessionId, updates) {
-  const allowedFields = ['name', 'status', 'current_step', 'auto_cleanup', 'notes', 'completed_at'];
+  const allowedFields = ['name', 'status', 'current_step', 'auto_cleanup', 'notes', 'completed_at', 'automation_mode'];
   const fields = [];
   const values = [];
 
   for (const [key, value] of Object.entries(updates)) {
     if (allowedFields.includes(key)) {
       fields.push(`${key} = ?`);
-      values.push(value);
+      // SQLite only accepts numbers, strings, bigints, buffers, and null - convert booleans
+      const sqlValue = typeof value === 'boolean' ? (value ? 1 : 0) : value;
+      values.push(sqlValue);
     }
   }
 

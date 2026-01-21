@@ -245,7 +245,12 @@ function executePlaybook(playbookType, inventoryPath, playbookPath, extraVars = 
         };
       }
 
-      if (code === 0 || code === 2) {
+      // Ansible exit codes:
+      // 0 = success
+      // 2 = one or more hosts had failures
+      // 4 = unreachable hosts
+      // Other = errors
+      if (code === 0) {
         resolve({
           success: true,
           stdout,
@@ -255,7 +260,9 @@ function executePlaybook(playbookType, inventoryPath, playbookPath, extraVars = 
       } else {
         reject({
           success: false,
-          error: `Process exited with code ${code}`,
+          error: code === 2 ? 'One or more tasks failed' :
+                 code === 4 ? 'One or more hosts unreachable' :
+                 `Process exited with code ${code}`,
           exitCode: code,
           stdout,
           stderr,

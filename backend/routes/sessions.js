@@ -5,7 +5,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { session, server, credential, step, ssl, file } = require('../controllers');
+const { session, server, credential, step, ssl, file, config } = require('../controllers');
 const { asyncHandler } = require('../middleware/errorHandler');
 const {
   validateServers,
@@ -123,6 +123,42 @@ router.post('/:id/ssl-config',
   validateSSLConfig,
   asyncHandler(ssl.saveSSLConfig)
 );
+
+// =====================================================
+// NFS CONFIGURATION
+// =====================================================
+
+/**
+ * @route   POST /api/sessions/:id/nfs-config
+ * @desc    Save NFS configuration
+ * @access  Public
+ */
+router.post('/:id/nfs-config', asyncHandler(config.saveNFSConfig));
+
+/**
+ * @route   GET /api/sessions/:id/nfs-config
+ * @desc    Get NFS configuration
+ * @access  Public
+ */
+router.get('/:id/nfs-config', asyncHandler(config.getNFSConfig));
+
+// =====================================================
+// LOAD BALANCER CONFIGURATION
+// =====================================================
+
+/**
+ * @route   POST /api/sessions/:id/lb-config
+ * @desc    Save Load Balancer configuration
+ * @access  Public
+ */
+router.post('/:id/lb-config', asyncHandler(config.saveLBConfig));
+
+/**
+ * @route   GET /api/sessions/:id/lb-config
+ * @desc    Get Load Balancer configuration
+ * @access  Public
+ */
+router.get('/:id/lb-config', asyncHandler(config.getLBConfig));
 
 // =====================================================
 // FILE MANAGEMENT

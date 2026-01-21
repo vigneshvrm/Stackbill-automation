@@ -584,26 +584,33 @@ function executePlaybook(playbookType, inventoryPath, playbookPath, extraVars = 
     });
     
     child.on('close', (code) => {
-      if (code === 0 || code === 2) {
-        if (currentService && (!credentials[currentService] || Object.keys(credentials[currentService]).length <= 1)) {
-          const regex = new RegExp(`CREDENTIALS\\|${currentService}\\|([^\\n]+)`, 'g');
-          let match;
-          while ((match = regex.exec(stdout)) !== null) {
-            const segments = match[1].split('|');
-            segments.forEach(segment => {
-              const [k, v] = segment.split('=');
-              if (k && v) {
-                recordCredential(currentService, k.trim(), v.trim());
-              }
-            });
-          }
+      // Parse credentials from stdout regardless of exit code
+      if (currentService && (!credentials[currentService] || Object.keys(credentials[currentService]).length <= 1)) {
+        const regex = new RegExp(`CREDENTIALS\\|${currentService}\\|([^\\n]+)`, 'g');
+        let match;
+        while ((match = regex.exec(stdout)) !== null) {
+          const segments = match[1].split('|');
+          segments.forEach(segment => {
+            const [k, v] = segment.split('=');
+            if (k && v) {
+              recordCredential(currentService, k.trim(), v.trim());
+            }
+          });
         }
-        if (currentService && credentialDefaults[currentService]) {
-          credentials[currentService] = {
-            ...credentialDefaults[currentService],
-            ...(credentials[currentService] || {})
-          };
-        }
+      }
+      if (currentService && credentialDefaults[currentService]) {
+        credentials[currentService] = {
+          ...credentialDefaults[currentService],
+          ...(credentials[currentService] || {})
+        };
+      }
+
+      // Ansible exit codes:
+      // 0 = success
+      // 2 = one or more hosts had failures
+      // 4 = unreachable hosts
+      // Other = errors
+      if (code === 0) {
         logger.info(`Playbook ${playbookType} completed successfully`, { exitCode: code });
         resolve({
           success: true,
@@ -612,18 +619,15 @@ function executePlaybook(playbookType, inventoryPath, playbookPath, extraVars = 
           credentials
         });
       } else {
-        if (currentService && credentialDefaults[currentService]) {
-          credentials[currentService] = {
-            ...credentialDefaults[currentService],
-            ...(credentials[currentService] || {})
-          };
-        }
         // Include more detailed error information
         const errorMsg = stderr || stdout || `Process exited with code ${code}`;
+        const errorDescription = code === 2 ? 'One or more tasks failed' :
+                                 code === 4 ? 'One or more hosts unreachable' :
+                                 `Process exited with code ${code}`;
         logger.error(`Playbook ${playbookType} failed`, { exitCode: code, error: errorMsg.substring(0, 500) });
         reject({
           success: false,
-          error: `Process exited with code ${code}`,
+          error: errorDescription,
           exitCode: code,
           stdout,
           stderr,
@@ -1362,10 +1366,12 @@ app.post('/api/sessions/import', (req, res) => {
     const newSession = db.createSession(sessionData.name || 'Imported Session');
 
     // Update session metadata
+    // Note: SQLite only accepts numbers, strings, bigints, buffers, and null - not booleans
     db.updateSession(newSession.id, {
       status: sessionData.status || 'in_progress',
       current_step: sessionData.current_step || 0,
-      auto_cleanup: sessionData.auto_cleanup || false,
+      auto_cleanup: sessionData.auto_cleanup ? 1 : 0,  // Convert boolean to integer for SQLite
+      automation_mode: sessionData.automation_mode || 'manual',
       notes: sessionData.notes || ''
     });
 

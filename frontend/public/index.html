@@ -3588,6 +3588,7 @@
 
             let completedTasks = 0;
             let totalTasks = 0;
+            let currentTaskName = '';
 
             try {
                 const response = await fetch(`/api/playbook/${stepId}?stream=true`, {
@@ -3607,6 +3608,13 @@
                 const decoder = new TextDecoder();
                 let buffer = '';
 
+                function updateProgress() {
+                    // Cap at 100% until we get the complete event
+                    const pct = totalTasks > 0 ? Math.min(100, Math.round((completedTasks / totalTasks) * 100)) : 0;
+                    progressBar.style.width = `${pct}%`;
+                    progressPct.textContent = `${pct}%`;
+                }
+
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
@@ -3620,14 +3628,20 @@
                             try {
                                 const data = JSON.parse(line.substring(6));
                                 handleStreamEvent(stepId, data, taskList, progressBar, progressPct,
-                                    () => { totalTasks++; },
-                                    () => { completedTasks++; updateProgress(); });
-
-                                function updateProgress() {
-                                    const pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-                                    progressBar.style.width = `${pct}%`;
-                                    progressPct.textContent = `${pct}%`;
-                                }
+                                    (taskName) => {
+                                        // New task started
+                                        totalTasks++;
+                                        currentTaskName = taskName;
+                                    },
+                                    (taskName) => {
+                                        // Task completed - only count once per unique task
+                                        // (task_result fires for each host, but we want to count the task once)
+                                        if (taskName === currentTaskName) {
+                                            completedTasks++;
+                                            currentTaskName = ''; // Clear so we don't double-count
+                                            updateProgress();
+                                        }
+                                    });
                             } catch (e) {
                                 console.error('Error parsing SSE:', e);
                             }
@@ -3649,10 +3663,10 @@
             const step = DEPLOYMENT_STEPS.find(s => s.id === stepId);
 
             if (data.type === 'task') {
-                onTask();
+                onTask(data.task);
                 addTaskItem(taskList, data.task, 'pending', '&#9711;');
             } else if (data.type === 'task_result') {
-                onComplete();
+                onComplete(data.task);
                 const icon = data.status === 'ok' || data.status === 'changed' ? '&#10003;' :
                              data.status === 'fatal' ? '&#10007;' :
                              data.status === 'skipping' ? '&#8594;' : '&#9711;';

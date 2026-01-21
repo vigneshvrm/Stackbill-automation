@@ -12,5 +12,6 @@ module.exports = {
   step: require('./stepController'),
   ssl: require('./sslController'),
   file: require('./fileController'),
-  settings: require('./settingsController')
+  settings: require('./settingsController'),
+  config: require('./configController')
 };
