@@ -189,9 +189,15 @@
   vars:
     k8s_version: "{{ kubernetes_version | default('1.30') }}"
     pod_network_cidr: "10.244.0.0/16"
-    load_balancer_ip: "{{ lb_ip | default(ansible_host) }}"
+    # Use private IP for control-plane-endpoint, or lb_ip if provided
+    node_ip: "{{ ansible_default_ipv4.address }}"
+    load_balancer_ip: "{{ lb_ip | default(ansible_default_ipv4.address) }}"
 
   tasks:
+    - name: Display node IP configuration
+      ansible.builtin.debug:
+        msg: "Node IP: {{ node_ip }}, Control Plane Endpoint: {{ load_balancer_ip }}"
+
     - name: Check if cluster is already initialized
       ansible.builtin.stat:
         path: /etc/kubernetes/admin.conf
@@ -201,7 +207,7 @@
       ansible.builtin.command: >
         kubeadm init
         --pod-network-cidr={{ pod_network_cidr }}
-        --apiserver-advertise-address={{ ansible_host }}
+        --apiserver-advertise-address={{ node_ip }}
         --control-plane-endpoint={{ load_balancer_ip }}:6443
         --upload-certs
       register: kubeadm_init
@@ -283,8 +289,13 @@
   serial: 1
   vars:
     first_master: "{{ groups['master'][0] }}"
+    node_ip: "{{ ansible_default_ipv4.address }}"
 
   tasks:
+    - name: Display node IP for this master
+      ansible.builtin.debug:
+        msg: "Joining as control-plane with IP: {{ node_ip }}"
+
     - name: Check if node is already joined
       ansible.builtin.stat:
         path: /etc/kubernetes/admin.conf
@@ -301,7 +312,7 @@
         {{ kubernetes_join_command }}
         --control-plane
         --certificate-key {{ kubernetes_certificate_key }}
-        --apiserver-advertise-address={{ ansible_host }}
+        --apiserver-advertise-address={{ node_ip }}
       register: control_plane_join
       when:
         - not admin_conf_check.stat.exists
