@@ -161,8 +161,26 @@ function generateInventoryContent(servers, playbookType) {
     if (masterServers.length > 0) content += 'master\n';
     if (workerServers.length > 0) content += 'worker\n';
 
+  } else if (playbookType === 'env-check') {
+    // For env-check, deduplicate servers based on hostname+port to avoid apt lock conflicts
+    // when multiple roles point to the same physical server
+    const uniqueServers = [];
+    const seen = new Set();
+
+    for (const server of servers) {
+      const key = `${server.hostname}:${server.ssh_port || 22}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueServers.push(server);
+      }
+    }
+
+    content += '[all]\n';
+    uniqueServers.forEach((server, idx) => {
+      content += formatServerLine(server, `server-${idx}`) + '\n';
+    });
   } else {
-    // For NFS, RabbitMQ, env-check, kubectl, helm, ssl, stackbill - use 'all' group
+    // For NFS, RabbitMQ, kubectl, helm, ssl, stackbill - use 'all' group
     content += '[all]\n';
     servers.forEach((server, idx) => {
       content += formatServerLine(server, `server-${idx}`) + '\n';
