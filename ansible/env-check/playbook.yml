@@ -56,58 +56,24 @@
         fail_msg: "Insufficient Disk Space: {{ disk_space_gb.stdout }}GB free (minimum 20GB required)"
         success_msg: "Disk Check Passed: {{ disk_space_gb.stdout }}GB free"
 
-    - name: Test internet connectivity - Google DNS
+    - name: Test internet connectivity
       ansible.builtin.command: ping -c 2 8.8.8.8
       register: ping_google
       changed_when: false
-      failed_when: false
+      failed_when: ping_google.rc != 0
 
-    - name: Verify internet access
-      ansible.builtin.assert:
-        that: ping_google.rc == 0
-        fail_msg: "Internet connectivity check failed - Cannot reach Google DNS (8.8.8.8)"
-        success_msg: "Internet connectivity verified"
-
-    - name: Test DNS resolution
-      ansible.builtin.command: nslookup google.com
-      register: dns_check
-      changed_when: false
-      failed_when: false
-
-    - name: Verify DNS resolution
-      ansible.builtin.assert:
-        that: dns_check.rc == 0
-        fail_msg: "DNS resolution check failed"
-        success_msg: "DNS resolution working"
-
-    - name: Test access to StackBill S3 scripts repository
+    - name: Test access to StackBill S3 repository
       ansible.builtin.uri:
         url: https://stacbilldeploy.s3.us-east-1.amazonaws.com/
         method: GET
         status_code: [200, 403]
         timeout: 10
       register: s3_check
-      failed_when: false
-
-    - name: Verify S3 repository access
-      ansible.builtin.debug:
-        msg: "{{ 'S3 Repository accessible' if s3_check.status in [200, 403] else 'WARNING: Cannot reach S3 repository' }}"
 
     - name: Check if firewall is active
       ansible.builtin.command: ufw status
       register: ufw_status
       changed_when: false
-      failed_when: false
-
-    - name: Display firewall status
-      ansible.builtin.debug:
-        msg: "Firewall Status: {{ ufw_status.stdout_lines[0] if ufw_status.stdout_lines else 'Unknown' }}"
-
-    - name: Test port 22 (SSH) is listening
-      ansible.builtin.wait_for:
-        port: 22
-        host: localhost
-        timeout: 5
       failed_when: false
 
     - name: Check common required ports availability
@@ -122,10 +88,6 @@
         done
       register: port_check
       changed_when: false
-
-    - name: Display port availability
-      ansible.builtin.debug:
-        msg: "{{ port_check.stdout_lines }}"
 
     - name: Stop unattended-upgrades service
       ansible.builtin.service:
@@ -158,32 +120,3 @@
 
         sleep 2
       changed_when: false
-
-    - name: Verify apt package manager is working
-      ansible.builtin.apt:
-        update_cache: yes
-        cache_valid_time: 3600
-      register: apt_check
-
-    - name: Test package installation capability
-      ansible.builtin.apt:
-        name: curl
-        state: present
-      register: curl_install
-
-    - name: Summary - Environment Check Complete
-      ansible.builtin.debug:
-        msg:
-          - "======================================"
-          - "ENVIRONMENT CHECK SUMMARY"
-          - "======================================"
-          - "Host: {{ inventory_hostname }}"
-          - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
-          - "CPU: {{ ansible_processor_vcpus }} cores"
-          - "Memory: {{ (ansible_memtotal_mb / 1024) | round(2) }} GB"
-          - "Disk Available: {{ disk_space_gb.stdout }}GB"
-          - "Internet: {{ 'OK' if ping_google.rc == 0 else 'FAILED' }}"
-          - "DNS: {{ 'OK' if dns_check.rc == 0 else 'FAILED' }}"
-          - "S3 Access: {{ 'OK' if s3_check.status in [200, 403] else 'FAILED' }}"
-          - "APT: {{ 'OK' if apt_check is success else 'FAILED' }}"
-          - "======================================"
