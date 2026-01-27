@@ -32,6 +32,13 @@ function formatServerLine(server, name) {
 
   line += ` ansible_user=${sshUser}`;
 
+  // Pass custom_hostname for playbooks that set the hostname (kubernetes)
+  // Use the server's friendly name if provided, otherwise use the inventory name
+  const customHostname = server.name || name;
+  if (customHostname) {
+    line += ` custom_hostname=${customHostname}`;
+  }
+
   // Handle authentication type
   if (sshAuthType === 'key') {
     if (server.ssh_key) {
