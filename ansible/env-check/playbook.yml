@@ -30,22 +30,31 @@
         fail_msg: "This playbook requires Ubuntu 22.04 or later. Found: {{ ansible_distribution }} {{ ansible_distribution_version }}"
         success_msg: "OS Check Passed: {{ ansible_distribution }} {{ ansible_distribution_version }}"
 
-    - name: Check system resources - CPU
-      ansible.builtin.debug:
-        msg: "CPU Cores: {{ ansible_processor_vcpus }}"
+    - name: Check system resources - CPU (minimum 2 cores)
+      ansible.builtin.assert:
+        that:
+          - ansible_processor_vcpus >= 2
+        fail_msg: "Insufficient CPU: {{ ansible_processor_vcpus }} cores (minimum 2 required)"
+        success_msg: "CPU Check Passed: {{ ansible_processor_vcpus }} cores"
 
-    - name: Check system resources - Memory
-      ansible.builtin.debug:
-        msg: "Total Memory: {{ (ansible_memtotal_mb / 1024) | round(2) }} GB"
+    - name: Check system resources - Memory (minimum 4GB)
+      ansible.builtin.assert:
+        that:
+          - ansible_memtotal_mb >= 3800
+        fail_msg: "Insufficient Memory: {{ (ansible_memtotal_mb / 1024) | round(2) }} GB (minimum 4GB required)"
+        success_msg: "Memory Check Passed: {{ (ansible_memtotal_mb / 1024) | round(2) }} GB"
 
-    - name: Check system resources - Disk
-      ansible.builtin.shell: df -h / | tail -1 | awk '{print $4}'
-      register: disk_space
+    - name: Get available disk space
+      ansible.builtin.shell: df -BG / | tail -1 | awk '{print $4}' | tr -d 'G'
+      register: disk_space_gb
       changed_when: false
 
-    - name: Display disk space
-      ansible.builtin.debug:
-        msg: "Available Disk Space: {{ disk_space.stdout }}"
+    - name: Check system resources - Disk (minimum 20GB free)
+      ansible.builtin.assert:
+        that:
+          - disk_space_gb.stdout | int >= 20
+        fail_msg: "Insufficient Disk Space: {{ disk_space_gb.stdout }}GB free (minimum 20GB required)"
+        success_msg: "Disk Check Passed: {{ disk_space_gb.stdout }}GB free"
 
     - name: Test internet connectivity - Google DNS
       ansible.builtin.command: ping -c 2 8.8.8.8
@@ -152,7 +161,7 @@
           - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
           - "CPU: {{ ansible_processor_vcpus }} cores"
           - "Memory: {{ (ansible_memtotal_mb / 1024) | round(2) }} GB"
-          - "Disk Available: {{ disk_space.stdout }}"
+          - "Disk Available: {{ disk_space_gb.stdout }}GB"
           - "Internet: {{ 'OK' if ping_google.rc == 0 else 'FAILED' }}"
           - "DNS: {{ 'OK' if dns_check.rc == 0 else 'FAILED' }}"
           - "S3 Access: {{ 'OK' if s3_check.status in [200, 403] else 'FAILED' }}"
