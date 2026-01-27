@@ -3697,8 +3697,9 @@
                 hostNameMap[ansibleHostName] = friendlyName;
             });
 
-            // Track per-task server results: taskName -> { success: Set, failed: Set, skipped: Set }
+            // Track per-task server results: taskName -> { success: Set, failed: Set, skipped: Set, errors: Map }
             const taskResults = new Map();
+            let lastErrorMessage = null; // Store last error for final display
 
             try {
                 // Include session ID in URL for logging traceability
@@ -3808,7 +3809,8 @@
                         taskResults.set(data.task, {
                             success: new Set(),
                             failed: new Set(),
-                            skipped: new Set()
+                            skipped: new Set(),
+                            errors: new Map() // Map of host -> error message
                         });
                     }
 
@@ -3817,7 +3819,13 @@
                     if (data.status === 'ok' || data.status === 'changed') {
                         if (friendlyHost) taskData.success.add(friendlyHost);
                     } else if (data.status === 'fatal') {
-                        if (friendlyHost) taskData.failed.add(friendlyHost);
+                        if (friendlyHost) {
+                            taskData.failed.add(friendlyHost);
+                            // Store actual error message if available
+                            if (data.errorMessage) {
+                                taskData.errors.set(friendlyHost, data.errorMessage);
+                            }
+                        }
                     } else if (data.status === 'skipping') {
                         if (friendlyHost) taskData.skipped.add(friendlyHost);
                     }
@@ -3826,9 +3834,13 @@
                     updateTaskItem(taskList, data.task, taskData, totalServers);
                 }
 
-                // Track failed hosts for final error messaging
+                // Track failed hosts and error messages for final error messaging
                 if (data.status === 'fatal' && friendlyHost && failedHosts) {
                     failedHosts.add(friendlyHost);
+                    // Capture error message for final display
+                    if (data.errorMessage) {
+                        lastErrorMessage = data.errorMessage;
+                    }
                 }
 
                 // Handle credentials
@@ -3865,12 +3877,20 @@
                     renderStepCards();
                     renderSummary();
                 } else {
-                    // Build detailed error message with failed hosts
+                    // Build detailed error message with failed hosts and actual error
                     let errorMsg = data.error || 'Deployment failed. Check the task list for details.';
                     if (failedHosts && failedHosts.size > 0) {
                         const hostList = Array.from(failedHosts).join(', ');
                         errorMsg += `<br><br><strong>Failed servers:</strong> ${hostList}`;
-                        errorMsg += '<br><small>Check SSH credentials and connectivity for these servers.</small>';
+                        // Show actual error message if available
+                        if (lastErrorMessage) {
+                            const truncatedError = lastErrorMessage.length > 300
+                                ? lastErrorMessage.substring(0, 300) + '...'
+                                : lastErrorMessage;
+                            errorMsg += `<br><br><strong>Error:</strong> <code style="word-break: break-all;">${truncatedError}</code>`;
+                        } else {
+                            errorMsg += '<br><small>Check SSH credentials and connectivity for these servers.</small>';
+                        }
                     }
                     showResult(stepId, 'error', errorMsg);
                 }
@@ -3944,7 +3964,20 @@
                 } else {
                     badge.textContent = `[${successCount}/${totalServers}]`;
                 }
-                failureDetails.innerHTML = `└─ Failed: ${Array.from(taskData.failed).join(', ')}`;
+
+                // Build detailed failure message with actual errors
+                let failureHtml = `└─ Failed: ${Array.from(taskData.failed).join(', ')}`;
+                if (taskData.errors && taskData.errors.size > 0) {
+                    const firstError = taskData.errors.values().next().value;
+                    if (firstError) {
+                        // Truncate long error messages
+                        const truncatedError = firstError.length > 200
+                            ? firstError.substring(0, 200) + '...'
+                            : firstError;
+                        failureHtml += `<br><small style="color:#dc3545; margin-left:20px;">Error: ${truncatedError}</small>`;
+                    }
+                }
+                failureDetails.innerHTML = failureHtml;
                 failureDetails.style.display = 'block';
             } else if (skippedCount === totalServers) {
                 // All skipped

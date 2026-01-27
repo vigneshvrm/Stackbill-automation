@@ -86,13 +86,29 @@ function parseAnsibleOutput(line, currentTask, credentials, service) {
     // Parse credentials from message
     parseCredentials(trimmedMessage, service, credentials);
 
-    // Try to parse JSON message
+    // Try to parse JSON message and extract error details
+    let errorMessage = null;
     if (trimmedMessage.startsWith('{')) {
       try {
         const parsedJson = JSON.parse(trimmedMessage);
-        if (parsedJson && parsedJson.msg !== undefined) {
-          const msgs = Array.isArray(parsedJson.msg) ? parsedJson.msg : [parsedJson.msg];
-          msgs.forEach(m => parseCredentials(String(m), service, credentials));
+        if (parsedJson) {
+          // Extract credentials from msg
+          if (parsedJson.msg !== undefined) {
+            const msgs = Array.isArray(parsedJson.msg) ? parsedJson.msg : [parsedJson.msg];
+            msgs.forEach(m => parseCredentials(String(m), service, credentials));
+          }
+
+          // Extract error message for failed tasks
+          if (status === 'fatal') {
+            // Prioritize stderr, then msg, then cmd for error details
+            if (parsedJson.stderr && parsedJson.stderr.trim()) {
+              errorMessage = parsedJson.stderr.trim();
+            } else if (parsedJson.msg) {
+              errorMessage = Array.isArray(parsedJson.msg) ? parsedJson.msg.join(', ') : String(parsedJson.msg);
+            } else if (parsedJson.cmd) {
+              errorMessage = `Command failed: ${parsedJson.cmd}`;
+            }
+          }
         }
       } catch (e) {
         // Ignore JSON parse errors
@@ -113,6 +129,7 @@ function parseAnsibleOutput(line, currentTask, credentials, service) {
       host,
       task: currentTask,
       message: trimmedMessage,
+      errorMessage,
       line,
       credentialUpdate
     };
