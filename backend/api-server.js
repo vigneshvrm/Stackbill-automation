@@ -1221,12 +1221,24 @@ app.post('/api/sessions/:id/credentials/:service', (req, res) => {
   }
 });
 
-// Mark step as completed
+// Mark step as completed or failed (saves status for persistence across restarts)
 app.post('/api/sessions/:id/steps/:stepId/complete', (req, res) => {
   try {
-    const { stepData } = req.body;
-    db.completeStep(req.params.id, req.params.stepId, stepData || {});
+    const { stepData, status, taskResults } = req.body;
+    // status can be 'completed' or 'failed'
+    // taskResults is an object with task names as keys and results as values
+    db.completeStep(req.params.id, req.params.stepId, stepData || {}, status || 'completed', taskResults || null);
     res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get step status (for restoring state after page reload)
+app.get('/api/sessions/:id/steps/:stepId/status', (req, res) => {
+  try {
+    const status = db.getStepStatus(req.params.id, req.params.stepId);
+    res.json({ success: true, status });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

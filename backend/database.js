@@ -212,6 +212,20 @@ try {
   // Column already exists, ignore error
 }
 
+// Migration: Add status column to completed_steps for tracking failed deployments
+try {
+  db.exec(`ALTER TABLE completed_steps ADD COLUMN status TEXT DEFAULT 'completed'`);
+} catch (e) {
+  // Column already exists, ignore error
+}
+
+// Migration: Add task_results column to store task-level results
+try {
+  db.exec(`ALTER TABLE completed_steps ADD COLUMN task_results TEXT`);
+} catch (e) {
+  // Column already exists, ignore error
+}
+
 db.exec(`
   -- Global settings table (deployment URLs, versions, etc.)
   CREATE TABLE IF NOT EXISTS global_settings (
@@ -349,9 +363,9 @@ function getSession(sessionId) {
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
   if (!session) return null;
 
-  // Get completed steps
+  // Get completed steps (including status and task results for persistence)
   const completedSteps = db.prepare(
-    'SELECT step_id, completed_at, step_data FROM completed_steps WHERE session_id = ?'
+    'SELECT step_id, completed_at, step_data, status, task_results FROM completed_steps WHERE session_id = ?'
   ).all(sessionId);
 
   // Get servers
@@ -411,15 +425,22 @@ function getSession(sessionId) {
     backendPort: lbRaw.backend_port
   } : { type: 'haproxy', backendPort: '30080' };
 
-  // Get step data
+  // Get step data, statuses, and task results
   const stepData = {};
+  const stepStatuses = {};
+  const stepTaskResults = {};
   completedSteps.forEach(step => {
     stepData[step.step_id] = step.step_data ? JSON.parse(step.step_data) : {};
+    stepStatuses[step.step_id] = step.status || 'completed';
+    stepTaskResults[step.step_id] = step.task_results ? JSON.parse(step.task_results) : null;
   });
 
   return {
     ...session,
-    completedSteps: completedSteps.map(s => s.step_id),
+    completedSteps: completedSteps.filter(s => s.status === 'completed' || !s.status).map(s => s.step_id),
+    failedSteps: completedSteps.filter(s => s.status === 'failed').map(s => s.step_id),
+    stepStatuses,
+    stepTaskResults,
     servers,
     credentials,
     modes,
@@ -577,19 +598,46 @@ function getCredentials(sessionId, service) {
 // ==================== STEP COMPLETION OPERATIONS ====================
 
 /**
- * Mark step as completed
+ * Mark step as completed or failed
+ * @param {string} sessionId - Session ID
+ * @param {string} stepId - Step ID
+ * @param {object} stepData - Additional step data
+ * @param {string} status - 'completed' or 'failed'
+ * @param {object} taskResults - Task-level results for display
  */
-function completeStep(sessionId, stepId, stepData = {}) {
+function completeStep(sessionId, stepId, stepData = {}, status = 'completed', taskResults = null) {
   const stmt = db.prepare(`
-    INSERT OR REPLACE INTO completed_steps (session_id, step_id, completed_at, step_data)
-    VALUES (?, ?, datetime('now'), ?)
+    INSERT OR REPLACE INTO completed_steps (session_id, step_id, completed_at, step_data, status, task_results)
+    VALUES (?, ?, datetime('now'), ?, ?, ?)
   `);
-  stmt.run(sessionId, stepId, JSON.stringify(stepData));
+  stmt.run(sessionId, stepId, JSON.stringify(stepData), status, taskResults ? JSON.stringify(taskResults) : null);
 
   // Update session timestamp
   db.prepare("UPDATE sessions SET updated_at = datetime('now') WHERE id = ?").run(sessionId);
 
   return true;
+}
+
+/**
+ * Get step status and results
+ * @param {string} sessionId - Session ID
+ * @param {string} stepId - Step ID
+ */
+function getStepStatus(sessionId, stepId) {
+  const row = db.prepare(`
+    SELECT status, step_data, task_results, completed_at
+    FROM completed_steps
+    WHERE session_id = ? AND step_id = ?
+  `).get(sessionId, stepId);
+
+  if (!row) return null;
+
+  return {
+    status: row.status || 'completed',
+    stepData: row.step_data ? JSON.parse(row.step_data) : {},
+    taskResults: row.task_results ? JSON.parse(row.task_results) : null,
+    completedAt: row.completed_at
+  };
 }
 
 /**
@@ -901,6 +949,7 @@ module.exports = {
   // Step completion
   completeStep,
   uncompleteStep,
+  getStepStatus,
 
   // Step modes
   setStepMode,

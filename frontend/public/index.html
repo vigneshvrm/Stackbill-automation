@@ -1608,6 +1608,9 @@
             currentStep: 0,
             activePanel: null,
             completedSteps: new Set(),
+            failedSteps: new Set(),    // Steps that failed (persisted)
+            stepStatuses: {},          // Step status: 'completed' or 'failed'
+            stepTaskResults: {},       // Task-level results for each step (persisted)
             stepData: {},
             credentials: {},
             servers: {},
@@ -1660,6 +1663,9 @@
                             state.sessionId = session.id;
                             state.sessionName = session.name;
                             state.completedSteps = new Set(session.completedSteps || []);
+                            state.failedSteps = new Set(session.failedSteps || []);
+                            state.stepStatuses = session.stepStatuses || {};
+                            state.stepTaskResults = session.stepTaskResults || {};
                             state.credentials = session.credentials || {};
                             state.stepData = session.stepData || {};
                             state.currentStep = session.current_step || 0;
@@ -1788,18 +1794,32 @@
             }
         }
 
-        // Mark step complete in database
-        async function markStepCompleteInDb(stepId, stepData = {}) {
+        // Mark step complete or failed in database (persists across restarts)
+        async function markStepCompleteInDb(stepId, stepData = {}, status = 'completed', taskResults = null) {
             if (!state.sessionId) return;
 
             try {
                 await fetch(`/api/sessions/${state.sessionId}/steps/${stepId}/complete`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ stepData })
+                    body: JSON.stringify({ stepData, status, taskResults })
                 });
             } catch (e) {
-                console.error('Failed to mark step complete:', e);
+                console.error('Failed to mark step status:', e);
+            }
+        }
+
+        // Get saved step status from database
+        async function getStepStatusFromDb(stepId) {
+            if (!state.sessionId) return null;
+
+            try {
+                const response = await fetch(`/api/sessions/${state.sessionId}/steps/${stepId}/status`);
+                const data = await response.json();
+                return data.status;
+            } catch (e) {
+                console.error('Failed to get step status:', e);
+                return null;
             }
         }
 
@@ -3860,6 +3880,19 @@
                 progressBar.style.width = '100%';
                 progressPct.textContent = '100%';
 
+                // Convert taskResults Map to serializable object for persistence
+                const taskResultsObj = {};
+                if (taskResults) {
+                    for (const [taskName, result] of taskResults) {
+                        taskResultsObj[taskName] = {
+                            success: Array.from(result.success || []),
+                            failed: Array.from(result.failed || []),
+                            skipped: Array.from(result.skipped || []),
+                            errors: result.errors ? Object.fromEntries(result.errors) : {}
+                        };
+                    }
+                }
+
                 if (data.success) {
                     state.completedSteps.add(stepId);
                     state.stepData[stepId] = { servers: state.servers[stepId] };
@@ -3876,6 +3909,9 @@
                     renderProgressSteps();
                     renderStepCards();
                     renderSummary();
+
+                    // Save step completion to database (with task results for persistence)
+                    markStepCompleteInDb(stepId, state.stepData[stepId], 'completed', taskResultsObj);
                 } else {
                     // Build detailed error message with failed hosts and actual error
                     let errorMsg = data.error || 'Deployment failed. Check the task list for details.';
@@ -3893,6 +3929,9 @@
                         }
                     }
                     showResult(stepId, 'error', errorMsg);
+
+                    // Save step FAILURE to database (so it persists across restarts)
+                    markStepCompleteInDb(stepId, { error: errorMsg, failedHosts: Array.from(failedHosts || []) }, 'failed', taskResultsObj);
                 }
             }
         }
