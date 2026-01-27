@@ -26,6 +26,19 @@
       when: custom_hostname is defined and custom_hostname | length > 0
 
   tasks:
+    - name: Wait for apt locks to be released
+      ansible.builtin.shell: |
+        while fuser /var/lib/dpkg/lock >/dev/null 2>&1 || \
+              fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || \
+              fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
+          echo "Waiting for apt locks (unattended-upgrades may be running)..."
+          sleep 5
+        done
+      changed_when: false
+      register: apt_lock_wait
+      async: 300
+      poll: 10
+
     - name: Verify Ubuntu version
       ansible.builtin.assert:
         that:

@@ -118,6 +118,18 @@
       ansible.builtin.debug:
         msg: "{{ port_check.stdout_lines }}"
 
+    - name: Wait for apt locks to be released
+      ansible.builtin.shell: |
+        while fuser /var/lib/dpkg/lock >/dev/null 2>&1 || \
+              fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || \
+              fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
+          echo "Waiting for apt locks (unattended-upgrades may be running)..."
+          sleep 5
+        done
+      changed_when: false
+      async: 300
+      poll: 10
+
     - name: Verify apt package manager is working
       ansible.builtin.apt:
         update_cache: yes
