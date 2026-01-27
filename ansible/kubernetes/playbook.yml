@@ -26,18 +26,37 @@
       when: custom_hostname is defined and custom_hostname | length > 0
 
   tasks:
-    - name: Wait for apt locks to be released
+    - name: Stop unattended-upgrades service
+      ansible.builtin.service:
+        name: unattended-upgrades
+        state: stopped
+      failed_when: false
+
+    - name: Kill processes holding apt locks
       ansible.builtin.shell: |
-        while fuser /var/lib/dpkg/lock >/dev/null 2>&1 || \
-              fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || \
-              fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
-          echo "Waiting for apt locks (unattended-upgrades may be running)..."
-          sleep 5
+        # Kill unattended-upgrades if running
+        pkill -9 unattended-upgr || true
+        pkill -9 apt.systemd.daily || true
+
+        # Wait and kill any process holding apt locks
+        for lock in /var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock; do
+          if [ -f "$lock" ]; then
+            pid=$(fuser "$lock" 2>/dev/null | awk '{print $1}')
+            if [ -n "$pid" ]; then
+              echo "Killing process $pid holding $lock"
+              kill -9 $pid 2>/dev/null || true
+            fi
+          fi
         done
+
+        # Remove stale lock files
+        rm -f /var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock 2>/dev/null || true
+
+        # Fix dpkg if interrupted
+        dpkg --configure -a 2>/dev/null || true
+
+        sleep 2
       changed_when: false
-      register: apt_lock_wait
-      async: 300
-      poll: 10
 
     - name: Verify Ubuntu version
       ansible.builtin.assert:
