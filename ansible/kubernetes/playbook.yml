@@ -296,10 +296,10 @@
         remote_src: yes
         mode: '0600'
 
-    - name: Install Flannel CNI
-      ansible.builtin.command: kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
-      register: flannel_install
-      changed_when: "'created' in flannel_install.stdout or 'configured' in flannel_install.stdout"
+    - name: Install Calico CNI (StackBill standard)
+      ansible.builtin.command: kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.2/manifests/calico.yaml
+      register: calico_install
+      changed_when: "'created' in calico_install.stdout or 'configured' in calico_install.stdout"
 
     - name: Wait for first master to be ready
       ansible.builtin.command: kubectl wait --for=condition=Ready node/{{ inventory_hostname }} --timeout=300s

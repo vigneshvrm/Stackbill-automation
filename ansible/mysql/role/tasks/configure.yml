@@ -17,24 +17,25 @@
     name: mysql
     state: restarted
 
-- name: Ensure schemas exist
+- name: Ensure schemas exist with UTF-8 charset (StackBill standard)
   shell: |
-    mysql -e "CREATE DATABASE IF NOT EXISTS {{ item }};"
+    mysql -e "CREATE SCHEMA IF NOT EXISTS \`{{ item }}\` DEFAULT CHARACTER SET utf8;"
   loop:
     - "{{ wolf_schema }}"
     - "{{ config_schema }}"
   register: schema_result
-  changed_when: "'CREATE DATABASE' in schema_result.stdout or schema_result.rc == 0"
+  changed_when: "'CREATE' in schema_result.stdout or schema_result.rc == 0"
   failed_when: false
 
-- name: Create application user
+- name: Create application user with mysql_native_password (StackBill standard)
   shell: |
     mysql -e "
     DROP USER IF EXISTS '{{ mysql_user }}'@'%';
-    CREATE USER '{{ mysql_user }}'@'%' IDENTIFIED BY '{{ mysql_password }}';
+    CREATE USER '{{ mysql_user }}'@'%' IDENTIFIED WITH mysql_native_password BY '{{ mysql_password }}';
     GRANT ALL PRIVILEGES ON {{ wolf_schema }}.* TO '{{ mysql_user }}'@'%';
     GRANT ALL PRIVILEGES ON {{ config_schema }}.* TO '{{ mysql_user }}'@'%';
-    FLUSH PRIVILEGES;"
+    FLUSH PRIVILEGES;
+    SET GLOBAL log_bin_trust_function_creators = 1;"
   register: user_result
   changed_when: "'CREATE USER' in user_result.stdout or 'GRANT' in user_result.stdout"
   failed_when: false
