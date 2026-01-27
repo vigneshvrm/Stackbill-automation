@@ -640,12 +640,19 @@ function executePlaybook(playbookType, inventoryPath, playbookPath, extraVars = 
           credentials
         });
       } else {
-        // Include more detailed error information
-        const errorMsg = stderr || stdout || `Process exited with code ${code}`;
+        // Extract actual fatal error lines from output for better logging
+        const fullOutput = stdout + '\n' + stderr;
+        const fatalLines = fullOutput.split('\n').filter(line =>
+          line.includes('fatal:') || line.includes('FAILED!') || line.includes('msg":')
+        );
+        const actualError = fatalLines.length > 0
+          ? fatalLines.slice(-3).join(' | ')  // Get last 3 fatal-related lines
+          : (stderr || stdout || `Process exited with code ${code}`);
+
         const errorDescription = code === 2 ? 'One or more tasks failed' :
                                  code === 4 ? 'One or more hosts unreachable' :
                                  `Process exited with code ${code}`;
-        logger.error(`Playbook ${playbookType} failed`, { ...logMeta, exitCode: code, error: errorMsg.substring(0, 500) });
+        logger.error(`Playbook ${playbookType} failed`, { ...logMeta, exitCode: code, error: actualError.substring(0, 1000) });
         reject({
           success: false,
           error: errorDescription,
