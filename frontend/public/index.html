@@ -3374,10 +3374,11 @@
             if (submitBtn && !submitBtn.disabled) {
                 // Validate that we have servers configured
                 const servers = state.servers[nextStep.id] || [];
-                if (servers.length > 0 && servers.every(s => s.ip && (s.password || s.ssh_key))) {
+                if (servers.length > 0 && servers.every(s => s.hostname && (s.password || s.ssh_key))) {
                     submitBtn.click();
                 } else {
                     // Can't auto-proceed - missing server configuration
+                    console.log('Auto-complete paused - servers:', servers);
                     showToast(`Auto-complete paused: ${nextStep.fullTitle} requires server configuration`, 'warning');
                 }
             }
@@ -3912,6 +3913,12 @@
 
                     // Save step completion to database (with task results for persistence)
                     markStepCompleteInDb(stepId, state.stepData[stepId], 'completed', taskResultsObj);
+
+                    // Auto-complete mode: automatically proceed to next step
+                    if (state.automationMode === 'auto') {
+                        // Small delay before auto-proceeding to let UI update
+                        setTimeout(() => autoCompleteNextStep(stepId), 2000);
+                    }
                 } else {
                     // Build detailed error message with failed hosts and actual error
                     let errorMsg = data.error || 'Deployment failed. Check the task list for details.';
