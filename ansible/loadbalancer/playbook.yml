@@ -13,8 +13,11 @@
     lb_frontend_port: "{{ frontend_port | default('443') }}"
     lb_backend_port: "{{ backend_port | default('30080') }}"  # NodePort on K8s
     domain_name: "{{ stackbill_domain | default('stackbill.local') }}"
-    ssl_cert_path: "/etc/ssl/stackbill/fullchain.pem"
-    ssl_key_path: "/etc/ssl/stackbill/privkey.pem"
+    # SSL paths - use domain name for directory
+    ssl_dir: "/etc/ssl/{{ domain_name }}"
+    ssl_cert_path: "{{ ssl_dir }}/fullchain.pem"
+    ssl_key_path: "{{ ssl_dir }}/privkey.pem"
+    ssl_combined_path: "{{ ssl_dir }}/{{ domain_name }}.pem"
 
   pre_tasks:
     - name: Set custom hostname if provided
@@ -44,7 +47,7 @@
     #####################################################################
     - name: Create SSL directory
       file:
-        path: /etc/ssl/stackbill
+        path: "{{ ssl_dir }}"
         state: directory
         mode: '0755'
 
@@ -62,7 +65,7 @@
     #####################################################################
     - name: Check if SSL certificate exists
       stat:
-        path: /etc/ssl/stackbill/stackbill.pem
+        path: "{{ ssl_combined_path }}"
       register: ssl_cert_check
 
     - name: Generate self-signed SSL certificate (temporary until SSL step)
@@ -70,14 +73,14 @@
       block:
         - name: Generate private key
           openssl_privatekey:
-            path: /etc/ssl/stackbill/privkey.pem
+            path: "{{ ssl_key_path }}"
             size: 2048
             mode: '0600'
 
         - name: Generate CSR
           openssl_csr:
-            path: /etc/ssl/stackbill/stackbill.csr
-            privatekey_path: /etc/ssl/stackbill/privkey.pem
+            path: "{{ ssl_dir }}/{{ domain_name }}.csr"
+            privatekey_path: "{{ ssl_key_path }}"
             common_name: "{{ domain_name }}"
             subject_alt_name:
               - "DNS:{{ domain_name }}"
@@ -85,21 +88,21 @@
 
         - name: Generate self-signed certificate
           openssl_certificate:
-            path: /etc/ssl/stackbill/fullchain.pem
-            privatekey_path: /etc/ssl/stackbill/privkey.pem
-            csr_path: /etc/ssl/stackbill/stackbill.csr
+            path: "{{ ssl_cert_path }}"
+            privatekey_path: "{{ ssl_key_path }}"
+            csr_path: "{{ ssl_dir }}/{{ domain_name }}.csr"
             provider: selfsigned
             selfsigned_not_after: "+365d"
             mode: '0644'
 
         - name: Create combined PEM file for HAProxy
-          shell: cat /etc/ssl/stackbill/fullchain.pem /etc/ssl/stackbill/privkey.pem > /etc/ssl/stackbill/stackbill.pem
+          shell: cat {{ ssl_cert_path }} {{ ssl_key_path }} > {{ ssl_combined_path }}
           args:
-            creates: /etc/ssl/stackbill/stackbill.pem
+            creates: "{{ ssl_combined_path }}"
 
         - name: Set permissions on combined PEM
           file:
-            path: /etc/ssl/stackbill/stackbill.pem
+            path: "{{ ssl_combined_path }}"
             mode: '0600'
 
     - name: Ensure combined PEM exists (if certs already present)
@@ -107,11 +110,11 @@
       block:
         - name: Check if combined PEM needs update
           stat:
-            path: /etc/ssl/stackbill/fullchain.pem
+            path: "{{ ssl_cert_path }}"
           register: fullchain_check
 
         - name: Recreate combined PEM if source certs changed
-          shell: cat /etc/ssl/stackbill/fullchain.pem /etc/ssl/stackbill/privkey.pem > /etc/ssl/stackbill/stackbill.pem
+          shell: cat {{ ssl_cert_path }} {{ ssl_key_path }} > {{ ssl_combined_path }}
           when: fullchain_check.stat.exists
           changed_when: false
 

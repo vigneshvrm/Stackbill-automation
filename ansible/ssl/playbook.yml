@@ -17,7 +17,9 @@
     ssl_org: "{{ organization | default('StackBill') }}"
     ssl_ou: "{{ organizational_unit | default('IT') }}"
     ssl_days: "{{ validity_days | default('365') }}"
-    ssl_output_dir: "{{ output_directory | default('/etc/ssl/stackbill') }}"
+    # Use domain name for output directory
+    ssl_output_dir: "/etc/ssl/{{ ssl_domain }}"
+    ssl_combined_pem: "{{ ssl_output_dir }}/{{ ssl_domain }}.pem"
     # For uploaded certificates
     ssl_fullchain: "{{ fullchain_certificate | default('') }}"
     ssl_privkey: "{{ private_key | default('') }}"
@@ -100,13 +102,13 @@
         # For HAProxy - create combined PEM file
         - name: Create combined PEM for HAProxy
           ansible.builtin.shell: |
-            cat {{ ssl_output_dir }}/fullchain.pem {{ ssl_output_dir }}/privkey.pem > {{ ssl_output_dir }}/stackbill.pem
+            cat {{ ssl_output_dir }}/fullchain.pem {{ ssl_output_dir }}/privkey.pem > {{ ssl_combined_pem }}
           args:
-            creates: "{{ ssl_output_dir }}/stackbill.pem"
+            creates: "{{ ssl_combined_pem }}"
 
         - name: Set combined PEM permissions
           ansible.builtin.file:
-            path: "{{ ssl_output_dir }}/stackbill.pem"
+            path: "{{ ssl_combined_pem }}"
             mode: '0600'
 
         - name: Verify uploaded certificate
@@ -124,7 +126,7 @@
               - "  - {{ ssl_output_dir }}/privkey.pem"
               - "  - {{ ssl_output_dir }}/certificate.crt (symlink)"
               - "  - {{ ssl_output_dir }}/private.key (symlink)"
-              - "  - {{ ssl_output_dir }}/stackbill.pem (combined for HAProxy)"
+              - "  - {{ ssl_combined_pem }} (combined for HAProxy)"
 
     # ==================== LET'S ENCRYPT CERTIFICATES ====================
     - name: Configure Let's Encrypt certificate
@@ -181,13 +183,13 @@
         # For HAProxy - create combined PEM file
         - name: Create combined PEM for HAProxy
           ansible.builtin.shell: |
-            cat {{ ssl_output_dir }}/fullchain.pem {{ ssl_output_dir }}/privkey.pem > {{ ssl_output_dir }}/stackbill.pem
+            cat {{ ssl_output_dir }}/fullchain.pem {{ ssl_output_dir }}/privkey.pem > {{ ssl_combined_pem }}
           args:
-            creates: "{{ ssl_output_dir }}/stackbill.pem"
+            creates: "{{ ssl_combined_pem }}"
 
         - name: Set combined PEM permissions
           ansible.builtin.file:
-            path: "{{ ssl_output_dir }}/stackbill.pem"
+            path: "{{ ssl_combined_pem }}"
             mode: '0600'
 
         - name: Display Let's Encrypt certificate status
@@ -242,13 +244,13 @@
         # For HAProxy - create combined PEM file
         - name: Create combined PEM for HAProxy
           ansible.builtin.shell: |
-            cat {{ ssl_output_dir }}/fullchain.pem {{ ssl_output_dir }}/privkey.pem > {{ ssl_output_dir }}/stackbill.pem
+            cat {{ ssl_output_dir }}/fullchain.pem {{ ssl_output_dir }}/privkey.pem > {{ ssl_combined_pem }}
           args:
-            creates: "{{ ssl_output_dir }}/stackbill.pem"
+            creates: "{{ ssl_combined_pem }}"
 
         - name: Set combined PEM permissions
           ansible.builtin.file:
-            path: "{{ ssl_output_dir }}/stackbill.pem"
+            path: "{{ ssl_combined_pem }}"
             mode: '0600'
 
         - name: Verify certificate
@@ -272,7 +274,7 @@
           - "CREDENTIALS|ssl|domain={{ ssl_domain }}"
           - "CREDENTIALS|ssl|private_key={{ ssl_output_dir }}/privkey.pem"
           - "CREDENTIALS|ssl|certificate={{ ssl_output_dir }}/fullchain.pem"
-          - "CREDENTIALS|ssl|combined_pem={{ ssl_output_dir }}/stackbill.pem"
+          - "CREDENTIALS|ssl|combined_pem={{ ssl_combined_pem }}"
 
     # ==================== SUMMARY ====================
     - name: SSL Installation Summary
@@ -288,7 +290,7 @@
           - "Files Available:"
           - "  Full Chain: {{ ssl_output_dir }}/fullchain.pem"
           - "  Private Key: {{ ssl_output_dir }}/privkey.pem"
-          - "  Combined (HAProxy): {{ ssl_output_dir }}/stackbill.pem"
+          - "  Combined (HAProxy): {{ ssl_combined_pem }}"
           - "  Certificate (symlink): {{ ssl_output_dir }}/certificate.crt"
           - "  Private Key (symlink): {{ ssl_output_dir }}/private.key"
           - ""
