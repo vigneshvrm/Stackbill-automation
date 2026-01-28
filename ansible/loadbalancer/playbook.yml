@@ -58,6 +58,64 @@
         update_cache: yes
 
     #####################################################################
+    # SSL Certificate Setup (Self-signed if none exists)
+    #####################################################################
+    - name: Check if SSL certificate exists
+      stat:
+        path: /etc/ssl/stackbill/stackbill.pem
+      register: ssl_cert_check
+
+    - name: Generate self-signed SSL certificate (temporary until SSL step)
+      when: not ssl_cert_check.stat.exists
+      block:
+        - name: Generate private key
+          openssl_privatekey:
+            path: /etc/ssl/stackbill/privkey.pem
+            size: 2048
+            mode: '0600'
+
+        - name: Generate CSR
+          openssl_csr:
+            path: /etc/ssl/stackbill/stackbill.csr
+            privatekey_path: /etc/ssl/stackbill/privkey.pem
+            common_name: "{{ domain_name }}"
+            subject_alt_name:
+              - "DNS:{{ domain_name }}"
+              - "DNS:*.{{ domain_name }}"
+
+        - name: Generate self-signed certificate
+          openssl_certificate:
+            path: /etc/ssl/stackbill/fullchain.pem
+            privatekey_path: /etc/ssl/stackbill/privkey.pem
+            csr_path: /etc/ssl/stackbill/stackbill.csr
+            provider: selfsigned
+            selfsigned_not_after: "+365d"
+            mode: '0644'
+
+        - name: Create combined PEM file for HAProxy
+          shell: cat /etc/ssl/stackbill/fullchain.pem /etc/ssl/stackbill/privkey.pem > /etc/ssl/stackbill/stackbill.pem
+          args:
+            creates: /etc/ssl/stackbill/stackbill.pem
+
+        - name: Set permissions on combined PEM
+          file:
+            path: /etc/ssl/stackbill/stackbill.pem
+            mode: '0600'
+
+    - name: Ensure combined PEM exists (if certs already present)
+      when: ssl_cert_check.stat.exists
+      block:
+        - name: Check if combined PEM needs update
+          stat:
+            path: /etc/ssl/stackbill/fullchain.pem
+          register: fullchain_check
+
+        - name: Recreate combined PEM if source certs changed
+          shell: cat /etc/ssl/stackbill/fullchain.pem /etc/ssl/stackbill/privkey.pem > /etc/ssl/stackbill/stackbill.pem
+          when: fullchain_check.stat.exists
+          changed_when: false
+
+    #####################################################################
     # HAProxy Installation (Default)
     #####################################################################
     - name: Install and configure HAProxy

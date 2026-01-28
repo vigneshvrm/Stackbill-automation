@@ -1630,7 +1630,8 @@
             },
             loadBalancerConfig: {
                 type: 'haproxy',    // 'haproxy' or 'nginx'
-                backendPort: '30080' // NodePort on K8s
+                backendPort: '30080', // NodePort on K8s
+                customHostname: ''   // Optional custom hostname for the server
             },
             automationMode: 'manual',  // 'manual' (step-by-step) or 'auto' (full automation)
             generatedFiles: []         // Files to auto-download
@@ -2359,6 +2360,22 @@
                                    style="max-width: 200px;">
                             <span style="color: var(--color-text-muted); font-size: 0.75rem;">
                                 The NodePort where Kubernetes Ingress is exposed (default: 30080)
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Server Hostname Configuration -->
+                    <div class="form-section">
+                        <div class="form-section-title">&#128421; Server Hostname (Optional)</div>
+                        <div class="form-group">
+                            <label class="form-label">Custom Hostname</label>
+                            <input type="text" class="form-input" id="lb_custom_hostname"
+                                   placeholder="e.g., lb01.stackbill.local"
+                                   value="${state.loadBalancerConfig?.customHostname || ''}"
+                                   onchange="updateLoadBalancerConfig('customHostname', this.value)"
+                                   style="max-width: 400px;">
+                            <span style="color: var(--color-text-muted); font-size: 0.75rem;">
+                                Set a custom Linux hostname for this server. Leave empty to keep the current hostname.
                             </span>
                         </div>
                     </div>
@@ -3716,6 +3733,10 @@
             if (stepId === 'loadbalancer') {
                 payload.variables.load_balancer_type = state.loadBalancerConfig?.type || 'haproxy';
                 payload.variables.backend_port = state.loadBalancerConfig?.backendPort || '30080';
+                // Add custom hostname if provided
+                if (state.loadBalancerConfig?.customHostname) {
+                    payload.variables.custom_hostname = state.loadBalancerConfig.customHostname;
+                }
             }
 
             let completedTasks = 0;
