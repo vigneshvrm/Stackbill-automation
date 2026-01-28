@@ -1901,8 +1901,9 @@
             } else if (stepId === 'nfs') {
                 relevantServers = envCheckServers.filter(s => s.purpose === 'nfs');
             } else if (stepId === 'kubectl' || stepId === 'helm' || stepId === 'stackbill') {
-                // Run deployments from K8s master (has kubeconfig)
-                relevantServers = envCheckServers.filter(s => s.purpose === 'k8s-master');
+                // Run deployments from first K8s master only (has kubeconfig)
+                const k8sMasters = envCheckServers.filter(s => s.purpose === 'k8s-master');
+                relevantServers = k8sMasters.length > 0 ? [k8sMasters[0]] : [];
             }
 
             if (relevantServers.length > 0 && (!state.servers[stepId] || state.servers[stepId].length === 0)) {
