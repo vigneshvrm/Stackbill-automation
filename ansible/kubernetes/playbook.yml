@@ -298,7 +298,7 @@
       changed_when: "'created' in calico_install.stdout or 'configured' in calico_install.stdout"
 
     - name: Wait for first master to be ready
-      ansible.builtin.command: kubectl wait --for=condition=Ready node/{{ inventory_hostname }} --timeout=300s
+      ansible.builtin.command: kubectl wait --for=condition=Ready node/{{ ansible_hostname }} --timeout=300s
       register: master_ready
       retries: 5
       delay: 30
@@ -385,7 +385,7 @@
       when: admin_conf_check.stat.exists or control_plane_join is changed
 
     - name: Wait for this master to be ready
-      ansible.builtin.command: kubectl wait --for=condition=Ready node/{{ inventory_hostname }} --timeout=300s
+      ansible.builtin.command: kubectl wait --for=condition=Ready node/{{ ansible_hostname }} --timeout=300s
       register: node_ready
       retries: 5
       delay: 30
