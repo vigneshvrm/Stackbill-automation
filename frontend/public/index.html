@@ -1909,7 +1909,10 @@
                 relevantServers = envCheckServers.filter(s => s.purpose === 'rabbitmq');
             } else if (stepId === 'loadbalancer') {
                 relevantServers = envCheckServers.filter(s => s.purpose === 'loadbalancer');
-            } else if (stepId === 'nfs' || stepId === 'kubectl' || stepId === 'helm' || stepId === 'ssl' || stepId === 'stackbill') {
+            } else if (stepId === 'ssl') {
+                // SSL step targets the load balancer server
+                relevantServers = envCheckServers.filter(s => s.purpose === 'loadbalancer');
+            } else if (stepId === 'nfs' || stepId === 'kubectl' || stepId === 'helm' || stepId === 'stackbill') {
                 relevantServers = envCheckServers.filter(s => s.purpose === 'nfs');
             }
 

@@ -290,6 +290,31 @@
           - "CREDENTIALS|ssl|certificate={{ ssl_output_dir }}/fullchain.pem"
           - "CREDENTIALS|ssl|combined_pem={{ ssl_combined_pem }}"
 
+    # ==================== RELOAD LOAD BALANCER ====================
+    - name: Check if HAProxy is installed
+      ansible.builtin.stat:
+        path: /etc/haproxy/haproxy.cfg
+      register: haproxy_installed
+
+    - name: Reload HAProxy to pick up new certificates
+      ansible.builtin.systemd:
+        name: haproxy
+        state: reloaded
+      when: haproxy_installed.stat.exists
+      failed_when: false
+
+    - name: Check if Nginx is installed
+      ansible.builtin.stat:
+        path: /etc/nginx/nginx.conf
+      register: nginx_installed
+
+    - name: Reload Nginx to pick up new certificates
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded
+      when: nginx_installed.stat.exists
+      failed_when: false
+
     # ==================== SUMMARY ====================
     - name: SSL Installation Summary
       ansible.builtin.debug:
@@ -307,6 +332,8 @@
           - "  Combined (HAProxy): {{ ssl_combined_pem }}"
           - "  Certificate (symlink): {{ ssl_output_dir }}/certificate.crt"
           - "  Private Key (symlink): {{ ssl_output_dir }}/private.key"
+          - ""
+          - "Load Balancer: {{ 'HAProxy reloaded' if haproxy_installed.stat.exists else ('Nginx reloaded' if nginx_installed.stat.exists else 'Not found') }}"
           - ""
           - "Ready for Load Balancer configuration!"
           - "======================================"

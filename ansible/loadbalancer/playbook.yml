@@ -13,6 +13,10 @@
     lb_frontend_port: "{{ frontend_port | default('443') }}"
     lb_backend_port: "{{ backend_port | default('30080') }}"  # NodePort on K8s
     domain_name: "{{ stackbill_domain | default('stackbill.local') }}"
+    # SSL configuration
+    ssl_type: "{{ ssl_certificate_type | default('letsencrypt') }}"  # letsencrypt, upload, or self-signed
+    ssl_fullchain: "{{ fullchain_certificate | default('') }}"
+    ssl_privkey: "{{ private_key | default('') }}"
     # SSL paths - use domain name for directory
     ssl_dir: "/etc/ssl/{{ domain_name }}"
     ssl_cert_path: "{{ ssl_dir }}/fullchain.pem"
@@ -61,62 +65,140 @@
         update_cache: yes
 
     #####################################################################
-    # SSL Certificate Setup (Self-signed if none exists)
+    # SSL Certificate Setup - Let's Encrypt
     #####################################################################
-    - name: Check if SSL certificate exists
-      stat:
-        path: "{{ ssl_combined_path }}"
-      register: ssl_cert_check
-
-    - name: Generate self-signed SSL certificate (temporary until SSL step)
-      when: not ssl_cert_check.stat.exists
+    - name: Configure Let's Encrypt certificate
+      when: ssl_type == 'letsencrypt'
       block:
-        - name: Generate private key
-          openssl_privatekey:
-            path: "{{ ssl_key_path }}"
-            size: 2048
-            mode: '0600'
+        - name: Install Certbot
+          apt:
+            name: certbot
+            state: present
+            update_cache: yes
 
-        - name: Generate CSR
-          openssl_csr:
-            path: "{{ ssl_dir }}/{{ domain_name }}.csr"
-            privatekey_path: "{{ ssl_key_path }}"
-            common_name: "{{ domain_name }}"
-            subject_alt_name:
-              - "DNS:{{ domain_name }}"
-              - "DNS:*.{{ domain_name }}"
+        - name: Check if Let's Encrypt certificate already exists
+          stat:
+            path: "/etc/letsencrypt/live/{{ domain_name }}/fullchain.pem"
+          register: letsencrypt_cert
 
-        - name: Generate self-signed certificate
-          openssl_certificate:
-            path: "{{ ssl_cert_path }}"
-            privatekey_path: "{{ ssl_key_path }}"
-            csr_path: "{{ ssl_dir }}/{{ domain_name }}.csr"
-            provider: selfsigned
-            selfsigned_not_after: "+365d"
-            mode: '0644'
+        - name: Stop HAProxy temporarily for certbot (if running)
+          systemd:
+            name: haproxy
+            state: stopped
+          failed_when: false
+          when: not letsencrypt_cert.stat.exists
 
-        - name: Create combined PEM file for HAProxy
+        - name: Obtain Let's Encrypt certificate (standalone mode)
+          command: >
+            certbot certonly --standalone
+            -d {{ domain_name }}
+            --non-interactive
+            --agree-tos
+            --email admin@{{ domain_name }}
+          register: certbot_result
+          when: not letsencrypt_cert.stat.exists
+
+        - name: Copy Let's Encrypt certificate files
+          copy:
+            src: "/etc/letsencrypt/live/{{ domain_name }}/{{ item.src }}"
+            dest: "{{ ssl_dir }}/{{ item.dest }}"
+            remote_src: yes
+            mode: "{{ item.mode }}"
+          loop:
+            - { src: 'privkey.pem', dest: 'privkey.pem', mode: '0600' }
+            - { src: 'fullchain.pem', dest: 'fullchain.pem', mode: '0644' }
+
+        - name: Create combined PEM for HAProxy (Let's Encrypt)
           shell: cat {{ ssl_cert_path }} {{ ssl_key_path }} > {{ ssl_combined_path }}
-          args:
-            creates: "{{ ssl_combined_path }}"
 
         - name: Set permissions on combined PEM
           file:
             path: "{{ ssl_combined_path }}"
             mode: '0600'
 
-    - name: Ensure combined PEM exists (if certs already present)
-      when: ssl_cert_check.stat.exists
+    #####################################################################
+    # SSL Certificate Setup - Upload Custom Certificate
+    #####################################################################
+    - name: Configure uploaded SSL certificates
+      when: ssl_type == 'upload'
       block:
-        - name: Check if combined PEM needs update
-          stat:
-            path: "{{ ssl_cert_path }}"
-          register: fullchain_check
+        - name: Validate fullchain certificate provided
+          assert:
+            that:
+              - ssl_fullchain | length > 0
+            fail_msg: "Fullchain certificate content is required for upload type"
 
-        - name: Recreate combined PEM if source certs changed
+        - name: Validate private key provided
+          assert:
+            that:
+              - ssl_privkey | length > 0
+            fail_msg: "Private key content is required for upload type"
+
+        - name: Write fullchain certificate
+          copy:
+            content: "{{ ssl_fullchain }}"
+            dest: "{{ ssl_cert_path }}"
+            mode: '0644'
+
+        - name: Write private key
+          copy:
+            content: "{{ ssl_privkey }}"
+            dest: "{{ ssl_key_path }}"
+            mode: '0600'
+
+        - name: Create combined PEM for HAProxy (uploaded)
           shell: cat {{ ssl_cert_path }} {{ ssl_key_path }} > {{ ssl_combined_path }}
-          when: fullchain_check.stat.exists
-          changed_when: false
+
+        - name: Set permissions on combined PEM
+          file:
+            path: "{{ ssl_combined_path }}"
+            mode: '0600'
+
+    #####################################################################
+    # SSL Certificate Setup - Self-signed (fallback)
+    #####################################################################
+    - name: Generate self-signed SSL certificate
+      when: ssl_type == 'self-signed' or (ssl_type != 'letsencrypt' and ssl_type != 'upload')
+      block:
+        - name: Check if certificate already exists
+          stat:
+            path: "{{ ssl_combined_path }}"
+          register: ssl_cert_check
+
+        - name: Generate self-signed certificate
+          when: not ssl_cert_check.stat.exists
+          block:
+            - name: Generate private key
+              openssl_privatekey:
+                path: "{{ ssl_key_path }}"
+                size: 2048
+                mode: '0600'
+
+            - name: Generate CSR
+              openssl_csr:
+                path: "{{ ssl_dir }}/{{ domain_name }}.csr"
+                privatekey_path: "{{ ssl_key_path }}"
+                common_name: "{{ domain_name }}"
+                subject_alt_name:
+                  - "DNS:{{ domain_name }}"
+                  - "DNS:*.{{ domain_name }}"
+
+            - name: Generate self-signed certificate
+              openssl_certificate:
+                path: "{{ ssl_cert_path }}"
+                privatekey_path: "{{ ssl_key_path }}"
+                csr_path: "{{ ssl_dir }}/{{ domain_name }}.csr"
+                provider: selfsigned
+                selfsigned_not_after: "+365d"
+                mode: '0644'
+
+            - name: Create combined PEM file for HAProxy
+              shell: cat {{ ssl_cert_path }} {{ ssl_key_path }} > {{ ssl_combined_path }}
+
+            - name: Set permissions on combined PEM
+              file:
+                path: "{{ ssl_combined_path }}"
+                mode: '0600'
 
     #####################################################################
     # HAProxy Installation (Default)
@@ -184,19 +266,42 @@
     #####################################################################
     # Display Configuration Info
     #####################################################################
+    #####################################################################
+    # Output Credentials
+    #####################################################################
+    - name: Output SSL credentials
+      debug:
+        msg:
+          - "CREDENTIALS|ssl|type={{ ssl_type }}"
+          - "CREDENTIALS|ssl|domain={{ domain_name }}"
+          - "CREDENTIALS|ssl|private_key={{ ssl_key_path }}"
+          - "CREDENTIALS|ssl|certificate={{ ssl_cert_path }}"
+          - "CREDENTIALS|ssl|combined_pem={{ ssl_combined_path }}"
+
+    #####################################################################
+    # Display Configuration Info
+    #####################################################################
     - name: Display load balancer configuration
       debug:
         msg:
-          - "Load Balancer Type: {{ lb_type }}"
+          - "======================================"
+          - "LOAD BALANCER INSTALLATION COMPLETE"
+          - "======================================"
+          - "Load Balancer Type: {{ lb_type | upper }}"
           - "Frontend Port: {{ lb_frontend_port }}"
           - "Backend Port: {{ lb_backend_port }}"
           - "Domain: {{ domain_name }}"
-          - "SSL Certificate: {{ ssl_cert_path }}"
+          - ""
+          - "SSL Configuration:"
+          - "  Type: {{ ssl_type | upper }}"
+          - "  Certificate: {{ ssl_cert_path }}"
+          - "  Private Key: {{ ssl_key_path }}"
+          - "  Combined PEM: {{ ssl_combined_path }}"
           - ""
           - "Next Steps:"
-          - "1. Configure SSL certificates (Step 10)"
-          - "2. Point DNS for {{ domain_name }} to this server"
-          - "3. Ensure K8s Ingress NodePort is {{ lb_backend_port }}"
+          - "1. Point DNS for {{ domain_name }} to this server"
+          - "2. Ensure K8s Ingress NodePort is {{ lb_backend_port }}"
+          - "======================================"
 
   handlers:
     - name: Restart HAProxy
