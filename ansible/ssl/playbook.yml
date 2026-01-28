@@ -8,6 +8,20 @@
   become: true
   gather_facts: true
 
+  pre_tasks:
+    - name: Set custom hostname if provided
+      hostname:
+        name: "{{ custom_hostname }}"
+      when: custom_hostname is defined and custom_hostname | length > 0
+
+    - name: Update /etc/hosts with hostname
+      lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1'
+        line: "127.0.1.1 {{ custom_hostname }}"
+        state: present
+      when: custom_hostname is defined and custom_hostname | length > 0
+
   vars:
     ssl_type: "{{ ssl_certificate_type | default('letsencrypt') }}"
     ssl_domain: "{{ domain_name | default('stackbill.local') }}"

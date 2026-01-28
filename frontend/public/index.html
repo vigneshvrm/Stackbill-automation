@@ -3705,7 +3705,8 @@
                     password: s.password,
                     ssh_key: s.ssh_key || '',
                     sudo_password: s.sudo_password || '',
-                    role: s.role
+                    role: s.role,
+                    name: s.name || ''  // Server name for custom hostname
                 })),
                 variables: {
                     deployment_mode: mode
