@@ -3604,6 +3604,42 @@
                 }
             }
 
+            // Add StackBill deployment config - pass all database credentials and server IPs
+            if (stepId === 'stackbill') {
+                // MySQL configuration
+                const mysqlCreds = state.credentials?.mysql || {};
+                const mysqlServers = state.servers?.mysql || [];
+                const mysqlHost = mysqlServers.length > 0 ? mysqlServers[0].hostname : '';
+                payload.variables.mysql_server = mysqlHost;
+                payload.variables.mysql_username = mysqlCreds.username || 'stackbill';
+                payload.variables.mysql_password = mysqlCreds.password || '';
+
+                // MongoDB configuration
+                const mongoCreds = state.credentials?.mongodb || {};
+                const mongoServers = state.servers?.mongodb || [];
+                const mongoHost = mongoServers.length > 0 ? mongoServers[0].hostname : '';
+                payload.variables.mongodb_server = mongoHost;
+                payload.variables.mongodb_username = mongoCreds.username || 'admin';
+                payload.variables.mongodb_password = mongoCreds.password || '';
+
+                // RabbitMQ configuration
+                const rabbitmqCreds = state.credentials?.rabbitmq || {};
+                const rabbitmqServers = state.servers?.rabbitmq || [];
+                const rabbitmqHost = rabbitmqServers.length > 0 ? rabbitmqServers[0].hostname : '';
+                payload.variables.rabbitmq_server = rabbitmqHost;
+                payload.variables.rabbitmq_username = rabbitmqCreds.username || 'mqadmin';
+                payload.variables.rabbitmq_password = rabbitmqCreds.password || '';
+
+                // NFS configuration
+                const nfsServers = state.servers?.nfs || [];
+                const nfsHost = nfsServers.length > 0 ? nfsServers[0].hostname : '';
+                payload.variables.nfs_server_ip = nfsHost;
+                payload.variables.nfs_export_path = state.nfsConfig?.exportPath || '/storage/k8-data';
+
+                // Domain configuration (from SSL/loadbalancer)
+                payload.variables.stackbill_domain = state.sslConfig?.domain || 'stackbill.local';
+            }
+
             let completedTasks = 0;
             let totalTasks = 0;
             let currentTaskName = '';
@@ -3777,6 +3813,9 @@
                         ...data.credentialUpdate.data
                     };
                     renderCredentials(stepId);
+                    // Persist credentials to database
+                    saveCredentialsToDb(data.credentialUpdate.service, state.credentials[data.credentialUpdate.service]);
+                    renderSummary(); // Update sidebar
                 }
             } else if (data.type === 'complete') {
                 // Clear the active deployment tracking
@@ -3814,6 +3853,9 @@
                     if (data.credentials && data.credentials[stepId]) {
                         state.credentials[stepId] = data.credentials[stepId];
                         renderCredentials(stepId);
+                        // Persist credentials to database
+                        saveCredentialsToDb(stepId, data.credentials[stepId]);
+                        renderSummary(); // Update sidebar
                     }
 
                     renderProgressSteps();

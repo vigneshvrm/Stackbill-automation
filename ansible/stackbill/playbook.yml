@@ -1,8 +1,9 @@
 ---
-# StackBill Application Deployment Playbook
-# Deploys StackBill application using Helm chart
+# StackBill Deployment Controller Playbook
+# Deploys the StackBill deployment controller via Helm
+# The controller provides a web UI to complete the StackBill configuration
 
-- name: Deploy StackBill Application
+- name: Deploy StackBill Deployment Controller
   hosts: all
   become: true
   gather_facts: true
@@ -22,22 +23,15 @@
       when: custom_hostname is defined and custom_hostname | length > 0
 
   vars:
-    stackbill_namespace: "sb-apps"
-    helm_release_name: "sb-deployment-controller"
+    # Namespaces - these match the helm chart values
+    stackbill_apps_namespace: "sb-apps"
+    stackbill_system_namespace: "sb-system"
+
+    # Helm configuration
+    helm_release_name: "{{ release_name | default('sb-deployment-controller') }}"
+    helm_chart_url: "{{ chart_url | default('https://sb-deployment-controllers.s3.ap-south-1.amazonaws.com/charts/sb-deployment-controller-0.1.0.tgz') }}"
+
     kubeconfig_path: "/root/.kube/config"
-    # These should be provided by the user
-    mysql_host: "{{ mysql_server | default('') }}"
-    mysql_user: "{{ mysql_username | default('stackbill') }}"
-    mysql_pass: "{{ mysql_password | default('') }}"
-    mongodb_host: "{{ mongodb_server | default('') }}"
-    mongodb_user: "{{ mongodb_username | default('admin') }}"
-    mongodb_pass: "{{ mongodb_password | default('') }}"
-    rabbitmq_host: "{{ rabbitmq_server | default('') }}"
-    rabbitmq_user: "{{ rabbitmq_username | default('mqadmin') }}"
-    rabbitmq_pass: "{{ rabbitmq_password | default('') }}"
-    nfs_server: "{{ nfs_server_ip | default('') }}"
-    nfs_path: "{{ nfs_export_path | default('/storage/k8-data') }}"
-    domain_name: "{{ stackbill_domain | default('stackbill.local') }}"
 
   tasks:
     - name: Verify Ubuntu version
@@ -80,7 +74,7 @@
     - name: Verify kubeconfig exists
       ansible.builtin.assert:
         that: kubeconfig_stat.stat.exists
-        fail_msg: "Kubeconfig not found at {{ kubeconfig_path }}. Copy it from K8s master first."
+        fail_msg: "Kubeconfig not found at {{ kubeconfig_path }}. This playbook must run on K8s master."
         success_msg: "Kubeconfig found"
 
     - name: Verify cluster connectivity
@@ -92,105 +86,197 @@
       ansible.builtin.debug:
         msg: "{{ cluster_check.stdout_lines }}"
 
-    - name: Create StackBill namespace
-      ansible.builtin.command: kubectl create namespace {{ stackbill_namespace }}
-      register: namespace_create
-      failed_when: false
-      changed_when: "'created' in namespace_create.stdout"
-
-    - name: Check if namespace exists
-      ansible.builtin.command: kubectl get namespace {{ stackbill_namespace }}
-      register: namespace_check
+    # ==================== VERIFY ISTIO IS INSTALLED ====================
+    - name: Check if Istio is installed
+      ansible.builtin.command: kubectl get namespace istio-system
+      register: istio_check
       changed_when: false
+      failed_when: false
 
-    - name: Display namespace status
-      ansible.builtin.debug:
-        msg: "Namespace {{ stackbill_namespace }}: {{ 'Ready' if namespace_check.rc == 0 else 'Not found' }}"
+    - name: Verify Istio is available
+      ansible.builtin.assert:
+        that: istio_check.rc == 0
+        fail_msg: "Istio is not installed. Please run 'istioctl install' first."
+        success_msg: "Istio namespace found"
 
-    # ==================== PREREQUISITES CHECK ====================
-    - name: Verify all prerequisites are configured
-      ansible.builtin.debug:
-        msg:
-          - "======================================"
-          - "PREREQUISITES CHECK"
-          - "======================================"
-          - "MySQL Server: {{ mysql_host | default('NOT SET') }}"
-          - "MongoDB Server: {{ mongodb_host | default('NOT SET') }}"
-          - "RabbitMQ Server: {{ rabbitmq_host | default('NOT SET') }}"
-          - "NFS Server: {{ nfs_server | default('NOT SET') }}"
-          - "Domain: {{ domain_name }}"
-          - "======================================"
+    - name: Check Istio ingress gateway
+      ansible.builtin.command: kubectl get svc istio-ingressgateway -n istio-system
+      register: istio_gateway_check
+      changed_when: false
+      failed_when: false
 
-    # ==================== NFS STORAGE CLASS ====================
-    - name: Create NFS StorageClass
+    - name: Verify Istio ingress gateway
+      ansible.builtin.assert:
+        that: istio_gateway_check.rc == 0
+        fail_msg: "Istio ingress gateway not found. Please verify Istio installation."
+        success_msg: "Istio ingress gateway found"
+
+    # ==================== CREATE SB-APPS NAMESPACE ====================
+    # Note: sb-system namespace is created by the helm chart automatically
+    - name: Check if sb-apps namespace exists
+      ansible.builtin.command: kubectl get namespace {{ stackbill_apps_namespace }}
+      register: apps_ns_check
+      changed_when: false
+      failed_when: false
+
+    - name: Create sb-apps namespace with Istio injection
       ansible.builtin.shell: |
         cat <<EOF | kubectl apply -f -
-        apiVersion: storage.k8s.io/v1
-        kind: StorageClass
+        apiVersion: v1
+        kind: Namespace
         metadata:
-          name: nfs-storage
-        provisioner: kubernetes.io/no-provisioner
-        volumeBindingMode: WaitForFirstConsumer
+          name: {{ stackbill_apps_namespace }}
+          labels:
+            istio-injection: enabled
         EOF
-      when: nfs_server != ''
-      register: storage_class
-      changed_when: "'created' in storage_class.stdout or 'configured' in storage_class.stdout"
+      register: apps_ns_create
+      when: apps_ns_check.rc != 0
+      changed_when: "'created' in apps_ns_create.stdout or 'configured' in apps_ns_create.stdout"
 
-    # ==================== DISPLAY NEXT STEPS ====================
-    - name: Display deployment instructions
-      ansible.builtin.debug:
-        msg:
-          - "======================================"
-          - "STACKBILL DEPLOYMENT READY"
-          - "======================================"
-          - ""
-          - "The environment is prepared for StackBill deployment."
-          - ""
-          - "To complete the deployment:"
-          - ""
-          - "1. Access the StackBill deployment wizard:"
-          - "   Open http://{{ domain_name }} in your browser"
-          - ""
-          - "2. In the wizard, configure:"
-          - "   - MySQL: {{ mysql_host }}:3306 (user: {{ mysql_user }})"
-          - "   - MongoDB: {{ mongodb_host }}:27017 (user: {{ mongodb_user }})"
-          - "   - RabbitMQ: {{ rabbitmq_host }}:5672 (user: {{ rabbitmq_user }})"
-          - "   - NFS: {{ nfs_server }}:{{ nfs_path }}"
-          - ""
-          - "3. The wizard will deploy the StackBill Helm chart"
-          - ""
-          - "4. Verify deployment:"
-          - "   kubectl get pods -n {{ stackbill_namespace }}"
-          - ""
-          - "======================================"
+    - name: Enable Istio injection on existing sb-apps namespace
+      ansible.builtin.command: kubectl label namespace {{ stackbill_apps_namespace }} istio-injection=enabled --overwrite
+      when: apps_ns_check.rc == 0
+      register: label_result
+      changed_when: "'labeled' in label_result.stdout"
+      failed_when: false
 
-    - name: Check existing pods in namespace
-      ansible.builtin.command: kubectl get pods -n {{ stackbill_namespace }}
-      register: pods_check
+    # ==================== HELM CHART DEPLOYMENT ====================
+    # The helm chart deploys the deployment controller web application
+    # It creates: sb-system namespace, deployment, service, gateway, virtualservice
+    - name: Check if Helm release already exists
+      ansible.builtin.command: helm list -A -q
+      register: helm_releases
       changed_when: false
       failed_when: false
 
-    - name: Display current pods
+    - name: Install StackBill Deployment Controller via Helm
+      ansible.builtin.command: >
+        helm install {{ helm_release_name }} {{ helm_chart_url }}
+        --wait
+        --timeout 10m
+      register: helm_install
+      when: helm_release_name not in helm_releases.stdout
+      failed_when: false
+
+    - name: Upgrade StackBill Deployment Controller if already exists
+      ansible.builtin.command: >
+        helm upgrade {{ helm_release_name }} {{ helm_chart_url }}
+        --wait
+        --timeout 10m
+      register: helm_upgrade
+      when: helm_release_name in helm_releases.stdout
+      failed_when: false
+
+    - name: Display Helm installation result
       ansible.builtin.debug:
-        msg: "{{ pods_check.stdout_lines if pods_check.stdout_lines else ['No pods found in namespace ' + stackbill_namespace] }}"
+        msg: "{{ helm_install.stdout_lines if helm_install.stdout_lines is defined else helm_upgrade.stdout_lines | default(['Helm deployment completed']) }}"
+
+    # ==================== WAIT FOR DEPLOYMENT CONTROLLER ====================
+    - name: Wait for deployment controller pod to be ready
+      ansible.builtin.command: kubectl wait --for=condition=ready pod -l app=sb-deployment-controller -n {{ stackbill_system_namespace }} --timeout=300s
+      register: pods_ready
+      failed_when: false
+      changed_when: false
+      retries: 3
+      delay: 10
+
+    - name: Check pods in sb-system namespace
+      ansible.builtin.command: kubectl get pods -n {{ stackbill_system_namespace }} -o wide
+      register: system_pods
+      changed_when: false
+      failed_when: false
+
+    - name: Display sb-system pods
+      ansible.builtin.debug:
+        msg: "{{ system_pods.stdout_lines if system_pods.stdout_lines else ['No pods found in ' + stackbill_system_namespace] }}"
+
+    # ==================== GET ISTIO INGRESS IP ====================
+    - name: Get Istio ingress gateway external IP
+      ansible.builtin.shell: kubectl get svc istio-ingressgateway -n istio-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+      register: ingress_ip
+      changed_when: false
+      failed_when: false
+
+    - name: Get Istio ingress gateway NodePort (fallback)
+      ansible.builtin.shell: kubectl get svc istio-ingressgateway -n istio-system -o jsonpath='{.spec.ports[?(@.name=="http2")].nodePort}'
+      register: ingress_nodeport
+      changed_when: false
+      failed_when: false
+      when: ingress_ip.stdout == ''
+
+    - name: Get any node IP for NodePort access
+      ansible.builtin.shell: kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}'
+      register: node_ip
+      changed_when: false
+      failed_when: false
+      when: ingress_ip.stdout == ''
+
+    # ==================== CHECK SERVICES ====================
+    - name: Check services in sb-system namespace
+      ansible.builtin.command: kubectl get svc -n {{ stackbill_system_namespace }}
+      register: system_services
+      changed_when: false
+      failed_when: false
+
+    - name: Display sb-system services
+      ansible.builtin.debug:
+        msg: "{{ system_services.stdout_lines if system_services.stdout_lines else ['No services found'] }}"
+
+    - name: Check Istio gateway and virtualservice
+      ansible.builtin.command: kubectl get gateway,virtualservice -n {{ stackbill_system_namespace }}
+      register: istio_resources
+      changed_when: false
+      failed_when: false
+
+    - name: Display Istio resources
+      ansible.builtin.debug:
+        msg: "{{ istio_resources.stdout_lines if istio_resources.stdout_lines else ['No Istio resources found'] }}"
 
     # ==================== OUTPUT SUMMARY ====================
+    - name: Set access URL
+      ansible.builtin.set_fact:
+        access_url: "{{ 'http://' + ingress_ip.stdout if ingress_ip.stdout != '' else 'http://' + node_ip.stdout + ':' + ingress_nodeport.stdout if node_ip.stdout is defined and ingress_nodeport.stdout is defined else 'Unable to determine - check Istio ingress' }}"
+
     - name: Deployment Summary
       ansible.builtin.debug:
         msg:
           - "======================================"
-          - "STACKBILL DEPLOYMENT STATUS"
+          - "STACKBILL DEPLOYMENT CONTROLLER INSTALLED"
           - "======================================"
-          - "Namespace: {{ stackbill_namespace }}"
-          - "Cluster Status: Connected"
-          - "Nodes: {{ cluster_check.stdout_lines | length - 1 }} nodes ready"
           - ""
-          - "Configuration Summary:"
-          - "  MySQL: {{ 'Configured' if mysql_host else 'Not configured' }}"
-          - "  MongoDB: {{ 'Configured' if mongodb_host else 'Not configured' }}"
-          - "  RabbitMQ: {{ 'Configured' if rabbitmq_host else 'Not configured' }}"
-          - "  NFS: {{ 'Configured' if nfs_server else 'Not configured' }}"
-          - "  Domain: {{ domain_name }}"
+          - "Namespaces:"
+          - "  - {{ stackbill_system_namespace }} (deployment controller)"
+          - "  - {{ stackbill_apps_namespace }} (application pods - will be populated)"
           - ""
-          - "Access StackBill at: https://{{ domain_name }}"
+          - "Helm Release: {{ helm_release_name }}"
+          - ""
+          - "Deployment Controller Status:"
+          - "{{ system_pods.stdout if system_pods.stdout else 'Pod status unavailable' }}"
+          - ""
           - "======================================"
+          - "NEXT STEPS - COMPLETE CONFIGURATION"
+          - "======================================"
+          - ""
+          - "1. Access the StackBill Deployment Controller:"
+          - "   URL: {{ access_url }}"
+          - ""
+          - "2. The web wizard will guide you to configure:"
+          - "   - MySQL connection"
+          - "   - MongoDB connection"
+          - "   - RabbitMQ connection"
+          - "   - NFS storage"
+          - "   - Domain and SSL certificates"
+          - ""
+          - "3. After configuration, the controller will deploy"
+          - "   the StackBill application pods to sb-apps namespace"
+          - ""
+          - "Manual commands to check status:"
+          - "  kubectl get pods -n {{ stackbill_system_namespace }}"
+          - "  kubectl get pods -n {{ stackbill_apps_namespace }}"
+          - "  kubectl get svc istio-ingressgateway -n istio-system"
+          - ""
+          - "======================================"
+
+    - name: Output access URL for automation
+      ansible.builtin.debug:
+        msg: "CREDENTIALS|stackbill|controller_url={{ access_url }}"
