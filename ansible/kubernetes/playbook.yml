@@ -180,17 +180,13 @@
         state: present
         timeout: 30
 
-    - name: Verify containerd CRI is working
-      ansible.builtin.command: crictl --runtime-endpoint unix:///var/run/containerd/containerd.sock version
-      register: crictl_check
-      retries: 5
-      delay: 3
-      until: crictl_check.rc == 0
+    - name: Verify containerd is working
+      ansible.builtin.command: ctr version
+      register: ctr_check
+      retries: 3
+      delay: 2
+      until: ctr_check.rc == 0
       changed_when: false
-
-    - name: Display containerd status
-      ansible.builtin.debug:
-        msg: "Containerd CRI ready: {{ crictl_check.stdout_lines | default(['OK']) }}"
 
     - name: Add Kubernetes GPG key
       ansible.builtin.apt_key:

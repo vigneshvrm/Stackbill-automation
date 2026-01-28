@@ -1944,7 +1944,7 @@
         // ==================== INITIALIZATION ====================
         async function init() {
             // Show loading state
-            document.getElementById('stepsGrid').innerHTML = '<div style="text-align: center; padding: 40px; color: var(--gray-500);">Loading session...</div>';
+            document.getElementById('stepsGrid').innerHTML = '<div style="text-align: center; padding: 40px; color: var(--color-text-muted);">Loading session...</div>';
 
             // Load global settings first
             await loadGlobalSettings();
@@ -2241,7 +2241,7 @@
                 formHtml += `
                     <div class="form-section" style="background: rgba(16, 185, 129, 0.05); padding: 16px; border-radius: 10px; border: 1px solid rgba(16, 185, 129, 0.2);">
                         <div class="form-section-title" style="color: var(--success);">&#9881; Deployment Mode: ${modeLabel}</div>
-                        <p style="color: var(--gray-500); font-size: 0.85rem; margin: 0;">
+                        <p style="color: var(--color-text-muted); font-size: 0.85rem; margin: 0;">
                             ${modeDescription}. Servers pre-filled from your Environment Check.
                         </p>
                     </div>
@@ -2252,7 +2252,7 @@
             formHtml += `
                 <div class="form-section">
                     <div class="form-section-title">&#128421; Target Server(s)</div>
-                    <p style="color: var(--gray-500); font-size: 0.85rem; margin-bottom: 12px;">
+                    <p style="color: var(--color-text-muted); font-size: 0.85rem; margin-bottom: 12px;">
                         Pre-filled from your Environment Check configuration.
                     </p>
                     <div class="servers-container" id="servers-${step.id}">
@@ -2269,27 +2269,27 @@
                 formHtml += `
                     <div class="form-section">
                         <div class="form-section-title">&#9881; NFS Storage Configuration</div>
-                        <p style="color: var(--gray-500); font-size: 0.85rem; margin-bottom: 16px;">
+                        <p style="color: var(--color-text-muted); font-size: 0.85rem; margin-bottom: 16px;">
                             Configure NFS storage. You can provide a disk for dedicated storage, or leave empty to use a directory in the root filesystem.
                         </p>
                         <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label">Disk Device (Optional)</label>
                                 <input type="text" class="form-input" id="disk_device" placeholder="e.g., /dev/sdb or leave empty" value="${state.nfsConfig?.diskDevice || ''}" onchange="updateNfsConfig('diskDevice', this.value)">
-                                <span style="color: var(--gray-500); font-size: 0.75rem;">
+                                <span style="color: var(--color-text-muted); font-size: 0.75rem;">
                                     Leave empty for directory-only mode. Provide raw disk (e.g., /dev/sdb) to format, or partition (e.g., /dev/sdb1) to mount directly.
                                 </span>
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Client IP Range</label>
                                 <input type="text" class="form-input" id="client_ip_range" placeholder="*" value="${state.nfsConfig?.clientIpRange || '*'}" onchange="updateNfsConfig('clientIpRange', this.value)">
-                                <span style="color: var(--gray-500); font-size: 0.75rem;">
+                                <span style="color: var(--color-text-muted); font-size: 0.75rem;">
                                     Use * for all clients, or specify range (e.g., 192.168.1.0/24)
                                 </span>
                             </div>
                         </div>
                         <div style="background: rgba(102, 126, 234, 0.05); padding: 12px; border-radius: 8px; border: 1px solid rgba(102, 126, 234, 0.2); margin-top: 12px;">
-                            <div style="font-size: 0.8rem; color: var(--gray-600);">
+                            <div style="font-size: 0.8rem; color: var(--color-text-secondary);">
                                 <strong style="color: var(--primary);">What will happen:</strong>
                                 <ul style="margin: 8px 0 0 16px; padding: 0;">
                                     <li><strong>If disk provided:</strong> Partition (if raw), format XFS, mount at /storage</li>
@@ -2312,22 +2312,22 @@
                     <!-- Load Balancer Type Selection -->
                     <div class="form-section">
                         <div class="form-section-title">&#9878; Load Balancer Type</div>
-                        <p style="color: var(--gray-500); font-size: 0.85rem; margin-bottom: 16px;">
+                        <p style="color: var(--color-text-muted); font-size: 0.85rem; margin-bottom: 16px;">
                             Choose which load balancer software to install and configure.
                         </p>
                         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-                            <label style="flex: 1; min-width: 200px; display: flex; align-items: flex-start; gap: 12px; cursor: pointer; padding: 16px; border-radius: 10px; border: 2px solid ${lbType === 'haproxy' ? 'var(--primary)' : 'var(--gray-200)'}; background: ${lbType === 'haproxy' ? 'rgba(102, 126, 234, 0.05)' : 'white'}; transition: all 0.2s;">
+                            <label style="flex: 1; min-width: 200px; display: flex; align-items: flex-start; gap: 12px; cursor: pointer; padding: 16px; border-radius: 10px; border: 2px solid ${lbType === 'haproxy' ? 'var(--primary)' : 'var(--color-border)'}; background: ${lbType === 'haproxy' ? 'rgba(102, 126, 234, 0.05)' : 'var(--color-bg-elevated)'}; transition: all 0.2s;">
                                 <input type="radio" name="lbType" value="haproxy" ${lbType === 'haproxy' ? 'checked' : ''} onchange="setLoadBalancerType('haproxy')" style="margin-top: 3px;">
                                 <div>
-                                    <div style="font-weight: 600; color: var(--gray-800); font-size: 0.95rem;">HAProxy (Recommended)</div>
-                                    <div style="font-size: 0.8rem; color: var(--gray-500); margin-top: 4px;">High-performance TCP/HTTP load balancer with built-in stats dashboard</div>
+                                    <div style="font-weight: 600; color: var(--color-text-primary); font-size: 0.95rem;">HAProxy (Recommended)</div>
+                                    <div style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 4px;">High-performance TCP/HTTP load balancer with built-in stats dashboard</div>
                                 </div>
                             </label>
-                            <label style="flex: 1; min-width: 200px; display: flex; align-items: flex-start; gap: 12px; cursor: pointer; padding: 16px; border-radius: 10px; border: 2px solid ${lbType === 'nginx' ? 'var(--primary)' : 'var(--gray-200)'}; background: ${lbType === 'nginx' ? 'rgba(102, 126, 234, 0.05)' : 'white'}; transition: all 0.2s;">
+                            <label style="flex: 1; min-width: 200px; display: flex; align-items: flex-start; gap: 12px; cursor: pointer; padding: 16px; border-radius: 10px; border: 2px solid ${lbType === 'nginx' ? 'var(--primary)' : 'var(--color-border)'}; background: ${lbType === 'nginx' ? 'rgba(102, 126, 234, 0.05)' : 'var(--color-bg-elevated)'}; transition: all 0.2s;">
                                 <input type="radio" name="lbType" value="nginx" ${lbType === 'nginx' ? 'checked' : ''} onchange="setLoadBalancerType('nginx')" style="margin-top: 3px;">
                                 <div>
-                                    <div style="font-weight: 600; color: var(--gray-800); font-size: 0.95rem;">Nginx</div>
-                                    <div style="font-size: 0.8rem; color: var(--gray-500); margin-top: 4px;">Versatile web server and reverse proxy</div>
+                                    <div style="font-weight: 600; color: var(--color-text-primary); font-size: 0.95rem;">Nginx</div>
+                                    <div style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 4px;">Versatile web server and reverse proxy</div>
                                 </div>
                             </label>
                         </div>
@@ -2343,7 +2343,7 @@
                                    value="${backendPort}"
                                    onchange="updateLoadBalancerConfig('backendPort', this.value)"
                                    style="max-width: 200px;">
-                            <span style="color: var(--gray-500); font-size: 0.75rem;">
+                            <span style="color: var(--color-text-muted); font-size: 0.75rem;">
                                 The NodePort where Kubernetes Ingress is exposed (default: 30080)
                             </span>
                         </div>
@@ -2352,26 +2352,26 @@
                     <!-- SSL Certificate Configuration -->
                     <div class="form-section">
                         <div class="form-section-title">&#128274; SSL Certificate Configuration</div>
-                        <p style="color: var(--gray-500); font-size: 0.85rem; margin-bottom: 16px;">
+                        <p style="color: var(--color-text-muted); font-size: 0.85rem; margin-bottom: 16px;">
                             Configure SSL certificates for HTTPS termination on the load balancer.
                         </p>
 
                         <!-- SSL Type Radio Buttons -->
                         <div style="margin-bottom: 20px;">
-                            <div style="font-size: 0.85rem; font-weight: 600; color: var(--gray-700); margin-bottom: 12px;">Certificate Type</div>
+                            <div style="font-size: 0.85rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 12px;">Certificate Type</div>
                             <div style="display: flex; flex-direction: column; gap: 10px;">
-                                <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; padding: 12px; border-radius: 8px; border: 2px solid ${sslType === 'letsencrypt' ? 'var(--primary)' : 'var(--gray-200)'}; background: ${sslType === 'letsencrypt' ? 'rgba(102, 126, 234, 0.05)' : 'white'}; transition: all 0.2s;">
+                                <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; padding: 12px; border-radius: 8px; border: 2px solid ${sslType === 'letsencrypt' ? 'var(--primary)' : 'var(--color-border)'}; background: ${sslType === 'letsencrypt' ? 'rgba(102, 126, 234, 0.05)' : 'white'}; transition: all 0.2s;">
                                     <input type="radio" name="sslType" value="letsencrypt" ${sslType === 'letsencrypt' ? 'checked' : ''} onchange="setSSLType('letsencrypt')" style="margin-top: 2px;">
                                     <div>
-                                        <div style="font-weight: 600; color: var(--gray-800);">&#127919; Let's Encrypt (Recommended)</div>
-                                        <div style="font-size: 0.8rem; color: var(--gray-500); margin-top: 2px;">Free trusted certificate with auto-renewal (requires domain validation)</div>
+                                        <div style="font-weight: 600; color: var(--color-text-primary);">&#127919; Let's Encrypt (Recommended)</div>
+                                        <div style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 2px;">Free trusted certificate with auto-renewal (requires domain validation)</div>
                                     </div>
                                 </label>
-                                <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; padding: 12px; border-radius: 8px; border: 2px solid ${sslType === 'upload' ? 'var(--primary)' : 'var(--gray-200)'}; background: ${sslType === 'upload' ? 'rgba(102, 126, 234, 0.05)' : 'white'}; transition: all 0.2s;">
+                                <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; padding: 12px; border-radius: 8px; border: 2px solid ${sslType === 'upload' ? 'var(--primary)' : 'var(--color-border)'}; background: ${sslType === 'upload' ? 'rgba(102, 126, 234, 0.05)' : 'white'}; transition: all 0.2s;">
                                     <input type="radio" name="sslType" value="upload" ${sslType === 'upload' ? 'checked' : ''} onchange="setSSLType('upload')" style="margin-top: 2px;">
                                     <div>
-                                        <div style="font-weight: 600; color: var(--gray-800);">&#128194; Upload Custom Certificate</div>
-                                        <div style="font-size: 0.8rem; color: var(--gray-500); margin-top: 2px;">Use your own certificate from a Certificate Authority</div>
+                                        <div style="font-weight: 600; color: var(--color-text-primary);">&#128194; Upload Custom Certificate</div>
+                                        <div style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 2px;">Use your own certificate from a Certificate Authority</div>
                                     </div>
                                 </label>
                             </div>
@@ -2384,7 +2384,7 @@
                                    placeholder="e.g., stackbill.example.com"
                                    value="${state.sslConfig.domain || ''}"
                                    onchange="updateSSLConfig('domain', this.value)">
-                            <span style="color: var(--gray-500); font-size: 0.75rem;">
+                            <span style="color: var(--color-text-muted); font-size: 0.75rem;">
                                 The domain name that will be used for your StackBill deployment
                             </span>
                         </div>
@@ -2392,7 +2392,7 @@
                         <!-- Let's Encrypt Notice -->
                         <div id="ssl-letsencrypt-info" style="display: ${sslType === 'letsencrypt' ? 'block' : 'none'};">
                             <div style="background: rgba(16, 185, 129, 0.05); padding: 12px; border-radius: 8px; border: 1px solid rgba(16, 185, 129, 0.2);">
-                                <p style="color: var(--gray-600); font-size: 0.85rem; margin: 0;">
+                                <p style="color: var(--color-text-secondary); font-size: 0.85rem; margin: 0;">
                                     <strong style="color: var(--success);">&#9989; Requirements:</strong>
                                     <ul style="margin: 8px 0 0 20px; padding: 0;">
                                         <li>Domain must point to the load balancer's public IP</li>
@@ -2411,7 +2411,7 @@
                                           placeholder="-----BEGIN CERTIFICATE-----&#10;...certificate content...&#10;-----END CERTIFICATE-----"
                                           onchange="updateSSLConfig('certificate', this.value)"
                                           style="font-family: monospace; font-size: 0.85rem;">${state.sslConfig.certificate || ''}</textarea>
-                                <span style="color: var(--gray-500); font-size: 0.75rem;">
+                                <span style="color: var(--color-text-muted); font-size: 0.75rem;">
                                     Paste your full chain SSL certificate in PEM format (including intermediate certificates)
                                 </span>
                             </div>
@@ -2421,7 +2421,7 @@
                                           placeholder="-----BEGIN PRIVATE KEY-----&#10;...key content...&#10;-----END PRIVATE KEY-----"
                                           onchange="updateSSLConfig('privateKey', this.value)"
                                           style="font-family: monospace; font-size: 0.85rem;">${state.sslConfig.privateKey || ''}</textarea>
-                                <span style="color: var(--gray-500); font-size: 0.75rem;">
+                                <span style="color: var(--color-text-muted); font-size: 0.75rem;">
                                     Paste your private key in PEM format (keep this secure!)
                                 </span>
                             </div>
@@ -2431,7 +2431,7 @@
                     <!-- Target Server -->
                     <div class="form-section">
                         <div class="form-section-title">&#128421; Target Server</div>
-                        <p style="color: var(--gray-500); font-size: 0.85rem; margin-bottom: 12px;">
+                        <p style="color: var(--color-text-muted); font-size: 0.85rem; margin-bottom: 12px;">
                             Load balancer will be installed on the following server(s).
                         </p>
                         <div class="servers-container" id="servers-${step.id}">
@@ -2445,33 +2445,33 @@
                 const sslType = state.sslConfig.type || 'letsencrypt';
                 formHtml = `
                     <div class="form-section" style="background: rgba(102, 126, 234, 0.05); padding: 16px; border-radius: 10px; border: 1px solid rgba(102, 126, 234, 0.2); margin-bottom: 20px;">
-                        <p style="color: var(--gray-600); font-size: 0.85rem; margin: 0;">
+                        <p style="color: var(--color-text-secondary); font-size: 0.85rem; margin: 0;">
                             <strong style="color: var(--primary);">&#9432; Note:</strong> SSL was already configured during Load Balancer setup.
                             Use this step only if you need to update or regenerate certificates.
                         </p>
                     </div>
                     <div class="form-section">
                         <div class="form-section-title">&#128274; Update SSL Certificate</div>
-                        <p style="color: var(--gray-500); font-size: 0.85rem; margin-bottom: 16px;">
+                        <p style="color: var(--color-text-muted); font-size: 0.85rem; margin-bottom: 16px;">
                             Update or regenerate SSL certificates for your Load Balancer.
                         </p>
 
                         <!-- SSL Type Radio Buttons -->
                         <div style="margin-bottom: 20px;">
-                            <div style="font-size: 0.85rem; font-weight: 600; color: var(--gray-700); margin-bottom: 12px;">Certificate Type</div>
+                            <div style="font-size: 0.85rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 12px;">Certificate Type</div>
                             <div style="display: flex; flex-direction: column; gap: 10px;">
-                                <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; padding: 12px; border-radius: 8px; border: 2px solid ${sslType === 'letsencrypt' ? 'var(--primary)' : 'var(--gray-200)'}; background: ${sslType === 'letsencrypt' ? 'rgba(102, 126, 234, 0.05)' : 'white'}; transition: all 0.2s;">
+                                <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; padding: 12px; border-radius: 8px; border: 2px solid ${sslType === 'letsencrypt' ? 'var(--primary)' : 'var(--color-border)'}; background: ${sslType === 'letsencrypt' ? 'rgba(102, 126, 234, 0.05)' : 'white'}; transition: all 0.2s;">
                                     <input type="radio" name="sslType" value="letsencrypt" ${sslType === 'letsencrypt' ? 'checked' : ''} onchange="setSSLType('letsencrypt')" style="margin-top: 2px;">
                                     <div>
-                                        <div style="font-weight: 600; color: var(--gray-800);">&#127919; Let's Encrypt (Recommended)</div>
-                                        <div style="font-size: 0.8rem; color: var(--gray-500); margin-top: 2px;">Free trusted certificate with auto-renewal (requires domain validation)</div>
+                                        <div style="font-weight: 600; color: var(--color-text-primary);">&#127919; Let's Encrypt (Recommended)</div>
+                                        <div style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 2px;">Free trusted certificate with auto-renewal (requires domain validation)</div>
                                     </div>
                                 </label>
-                                <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; padding: 12px; border-radius: 8px; border: 2px solid ${sslType === 'upload' ? 'var(--primary)' : 'var(--gray-200)'}; background: ${sslType === 'upload' ? 'rgba(102, 126, 234, 0.05)' : 'white'}; transition: all 0.2s;">
+                                <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; padding: 12px; border-radius: 8px; border: 2px solid ${sslType === 'upload' ? 'var(--primary)' : 'var(--color-border)'}; background: ${sslType === 'upload' ? 'rgba(102, 126, 234, 0.05)' : 'white'}; transition: all 0.2s;">
                                     <input type="radio" name="sslType" value="upload" ${sslType === 'upload' ? 'checked' : ''} onchange="setSSLType('upload')" style="margin-top: 2px;">
                                     <div>
-                                        <div style="font-weight: 600; color: var(--gray-800);">&#128194; Upload Custom Certificate</div>
-                                        <div style="font-size: 0.8rem; color: var(--gray-500); margin-top: 2px;">Use your own certificate from a Certificate Authority</div>
+                                        <div style="font-weight: 600; color: var(--color-text-primary);">&#128194; Upload Custom Certificate</div>
+                                        <div style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 2px;">Use your own certificate from a Certificate Authority</div>
                                     </div>
                                 </label>
                             </div>
@@ -2489,7 +2489,7 @@
                         <!-- Let's Encrypt Notice -->
                         <div id="ssl-letsencrypt-info" style="display: ${sslType === 'letsencrypt' ? 'block' : 'none'};">
                             <div style="background: rgba(16, 185, 129, 0.05); padding: 12px; border-radius: 8px; border: 1px solid rgba(16, 185, 129, 0.2); margin-bottom: 16px;">
-                                <p style="color: var(--gray-600); font-size: 0.85rem; margin: 0;">
+                                <p style="color: var(--color-text-secondary); font-size: 0.85rem; margin: 0;">
                                     <strong style="color: var(--success);">&#9989; Requirements:</strong>
                                     <ul style="margin: 8px 0 0 20px; padding: 0;">
                                         <li>Domain must point to the load balancer's public IP</li>
@@ -2508,7 +2508,7 @@
                                           placeholder="-----BEGIN CERTIFICATE-----&#10;...certificate content...&#10;-----END CERTIFICATE-----"
                                           onchange="updateSSLConfig('certificate', this.value)"
                                           style="font-family: monospace; font-size: 0.85rem;">${state.sslConfig.certificate || ''}</textarea>
-                                <span style="color: var(--gray-500); font-size: 0.75rem;">
+                                <span style="color: var(--color-text-muted); font-size: 0.75rem;">
                                     Paste your full chain SSL certificate in PEM format (including intermediate certificates)
                                 </span>
                             </div>
@@ -2518,7 +2518,7 @@
                                           placeholder="-----BEGIN PRIVATE KEY-----&#10;...key content...&#10;-----END PRIVATE KEY-----"
                                           onchange="updateSSLConfig('privateKey', this.value)"
                                           style="font-family: monospace; font-size: 0.85rem;">${state.sslConfig.privateKey || ''}</textarea>
-                                <span style="color: var(--gray-500); font-size: 0.75rem;">
+                                <span style="color: var(--color-text-muted); font-size: 0.75rem;">
                                     Paste your private key in PEM format (keep this secure!)
                                 </span>
                             </div>
@@ -2566,13 +2566,13 @@
                     <div id="auto-complete-config" style="display: ${state.automationMode === 'auto' ? 'block' : 'none'};">
                         <div class="form-section" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(16, 185, 129, 0.03) 100%); padding: 20px; border-radius: 12px; border: 2px solid rgba(16, 185, 129, 0.3); margin-bottom: 20px;">
                             <div class="form-section-title" style="color: var(--success); font-size: 1rem; margin-bottom: 8px;">&#128640; Auto-Complete Configuration</div>
-                            <p style="color: var(--gray-600); font-size: 0.85rem; margin-bottom: 16px;">
+                            <p style="color: var(--color-text-secondary); font-size: 0.85rem; margin-bottom: 16px;">
                                 Provide the following details upfront so deployment can proceed without interruption.
                             </p>
 
                             <!-- NFS Configuration -->
-                            <div style="background: white; padding: 16px; border-radius: 10px; margin-bottom: 16px; border: 1px solid var(--gray-200);">
-                                <div style="font-weight: 600; color: var(--gray-800); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                            <div style="background: var(--color-bg-card); padding: 16px; border-radius: 10px; margin-bottom: 16px; border: 1px solid var(--color-border);">
+                                <div style="font-weight: 600; color: var(--color-text-primary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
                                     <span>&#128193;</span> NFS Storage Configuration
                                 </div>
                                 <div class="form-row">
@@ -2582,7 +2582,7 @@
                                                value="${state.nfsConfig.diskDevice || ''}"
                                                onchange="updateNfsConfig('diskDevice', this.value)"
                                                placeholder="e.g., /dev/sdb or /dev/sdb1 (leave empty for directory-only)">
-                                        <span style="color: var(--gray-500); font-size: 0.75rem;">
+                                        <span style="color: var(--color-text-muted); font-size: 0.75rem;">
                                             Leave empty to use directory-only mode (no disk formatting). If provided: raw disk will be partitioned, partition will be mounted.
                                         </span>
                                     </div>
@@ -2592,7 +2592,7 @@
                                                value="${state.nfsConfig.clientIpRange || '*'}"
                                                onchange="updateNfsConfig('clientIpRange', this.value)"
                                                placeholder="*">
-                                        <span style="color: var(--gray-500); font-size: 0.75rem;">
+                                        <span style="color: var(--color-text-muted); font-size: 0.75rem;">
                                             Use * for all clients, or specify range (e.g., 192.168.1.0/24)
                                         </span>
                                     </div>
@@ -2600,18 +2600,18 @@
                             </div>
 
                             <!-- Load Balancer & SSL Configuration -->
-                            <div style="background: white; padding: 16px; border-radius: 10px; border: 1px solid var(--gray-200);">
-                                <div style="font-weight: 600; color: var(--gray-800); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                            <div style="background: var(--color-bg-card); padding: 16px; border-radius: 10px; border: 1px solid var(--color-border);">
+                                <div style="font-weight: 600; color: var(--color-text-primary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
                                     <span>&#9878;</span> Load Balancer & SSL Configuration
                                 </div>
                                 <div class="form-group" style="margin-bottom: 12px;">
                                     <label class="form-label">Load Balancer Type</label>
                                     <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px;">
-                                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 8px 14px; border-radius: 6px; border: 2px solid ${state.loadBalancerConfig?.type === 'haproxy' ? 'var(--primary)' : 'var(--gray-200)'}; background: ${state.loadBalancerConfig?.type === 'haproxy' ? 'rgba(102, 126, 234, 0.1)' : 'white'};">
+                                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 8px 14px; border-radius: 6px; border: 2px solid ${state.loadBalancerConfig?.type === 'haproxy' ? 'var(--primary)' : 'var(--color-border)'}; background: ${state.loadBalancerConfig?.type === 'haproxy' ? 'rgba(102, 126, 234, 0.1)' : 'var(--color-bg-elevated)'};">
                                             <input type="radio" name="autoLbType" value="haproxy" ${state.loadBalancerConfig?.type === 'haproxy' || !state.loadBalancerConfig?.type ? 'checked' : ''} onchange="updateLoadBalancerConfig('type', 'haproxy')">
                                             <span style="font-size: 0.85rem;">HAProxy</span>
                                         </label>
-                                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 8px 14px; border-radius: 6px; border: 2px solid ${state.loadBalancerConfig?.type === 'nginx' ? 'var(--primary)' : 'var(--gray-200)'}; background: ${state.loadBalancerConfig?.type === 'nginx' ? 'rgba(102, 126, 234, 0.1)' : 'white'};">
+                                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 8px 14px; border-radius: 6px; border: 2px solid ${state.loadBalancerConfig?.type === 'nginx' ? 'var(--primary)' : 'var(--color-border)'}; background: ${state.loadBalancerConfig?.type === 'nginx' ? 'rgba(102, 126, 234, 0.1)' : 'var(--color-bg-elevated)'};">
                                             <input type="radio" name="autoLbType" value="nginx" ${state.loadBalancerConfig?.type === 'nginx' ? 'checked' : ''} onchange="updateLoadBalancerConfig('type', 'nginx')">
                                             <span style="font-size: 0.85rem;">Nginx</span>
                                         </label>
@@ -2623,28 +2623,28 @@
                                            value="${state.sslConfig.domain || ''}"
                                            onchange="updateSSLConfig('domain', this.value)"
                                            placeholder="e.g., stackbill.example.com">
-                                    <span style="color: var(--gray-500); font-size: 0.75rem;">
+                                    <span style="color: var(--color-text-muted); font-size: 0.75rem;">
                                         The domain name for your StackBill deployment
                                     </span>
                                 </div>
                                 <div class="form-group" style="margin-bottom: 12px;">
                                     <label class="form-label">SSL Certificate Type</label>
                                     <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px;">
-                                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 8px 14px; border-radius: 6px; border: 2px solid ${state.sslConfig.type === 'letsencrypt' ? 'var(--primary)' : 'var(--gray-200)'}; background: ${state.sslConfig.type === 'letsencrypt' ? 'rgba(102, 126, 234, 0.1)' : 'white'};">
+                                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 8px 14px; border-radius: 6px; border: 2px solid ${state.sslConfig.type === 'letsencrypt' ? 'var(--primary)' : 'var(--color-border)'}; background: ${state.sslConfig.type === 'letsencrypt' ? 'rgba(102, 126, 234, 0.1)' : 'var(--color-bg-elevated)'};">
                                             <input type="radio" name="autoSslType" value="letsencrypt" ${state.sslConfig.type === 'letsencrypt' ? 'checked' : ''} onchange="setSSLType('letsencrypt')">
                                             <span style="font-size: 0.85rem;">Let's Encrypt (Recommended)</span>
                                         </label>
-                                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 8px 14px; border-radius: 6px; border: 2px solid ${state.sslConfig.type === 'upload' ? 'var(--primary)' : 'var(--gray-200)'}; background: ${state.sslConfig.type === 'upload' ? 'rgba(102, 126, 234, 0.1)' : 'white'};">
+                                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 8px 14px; border-radius: 6px; border: 2px solid ${state.sslConfig.type === 'upload' ? 'var(--primary)' : 'var(--color-border)'}; background: ${state.sslConfig.type === 'upload' ? 'rgba(102, 126, 234, 0.1)' : 'var(--color-bg-elevated)'};">
                                             <input type="radio" name="autoSslType" value="upload" ${state.sslConfig.type === 'upload' ? 'checked' : ''} onchange="setSSLType('upload')">
                                             <span style="font-size: 0.85rem;">Upload Certificate</span>
                                         </label>
                                     </div>
-                                    <span style="color: var(--gray-500); font-size: 0.75rem; display: block; margin-top: 6px;">
+                                    <span style="color: var(--color-text-muted); font-size: 0.75rem; display: block; margin-top: 6px;">
                                         ${state.sslConfig.type === 'upload' ? 'Upload your own fullchain.pem and privkey.pem' : 'Free trusted certificate with auto-renewal (requires domain pointed to LB and port 80 open)'}
                                     </span>
                                 </div>
                                 <!-- Certificate Upload Fields (shown when upload is selected) -->
-                                <div id="auto-ssl-upload-fields" style="display: ${state.sslConfig.type === 'upload' ? 'block' : 'none'}; margin-top: 12px; padding: 12px; background: var(--gray-50); border-radius: 8px;">
+                                <div id="auto-ssl-upload-fields" style="display: ${state.sslConfig.type === 'upload' ? 'block' : 'none'}; margin-top: 12px; padding: 12px; background: var(--color-gray-50); border-radius: 8px;">
                                     <div class="form-group" style="margin-bottom: 12px;">
                                         <label class="form-label">Full Chain Certificate (fullchain.pem) *</label>
                                         <textarea class="form-input" id="auto_ssl_fullchain" rows="4"
@@ -2666,7 +2666,7 @@
 
                     <div class="form-section">
                         <div class="form-section-title">&#127760; Add All Your Infrastructure VMs</div>
-                        <p style="color: var(--gray-500); font-size: 0.85rem; margin-bottom: 16px;">
+                        <p style="color: var(--color-text-muted); font-size: 0.85rem; margin-bottom: 16px;">
                             Add all VMs that will be part of your StackBill deployment. Select the purpose for each VM to help identify them later.
                         </p>
                         <div class="servers-container" id="servers-${step.id}">
@@ -2833,20 +2833,20 @@
                             </div>
                             <div class="server-info-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 12px;">
                                 <div class="server-info-item">
-                                    <span style="color: var(--gray-500); font-size: 0.75rem; display: block;">Hostname / IP</span>
-                                    <span style="color: var(--gray-800); font-weight: 500;">${server.hostname || '-'}</span>
+                                    <span style="color: var(--color-text-muted); font-size: 0.75rem; display: block;">Hostname / IP</span>
+                                    <span style="color: var(--color-text-primary); font-weight: 500;">${server.hostname || '-'}</span>
                                 </div>
                                 <div class="server-info-item">
-                                    <span style="color: var(--gray-500); font-size: 0.75rem; display: block;">SSH Port</span>
-                                    <span style="color: var(--gray-800); font-weight: 500;">${server.ssh_port || 22}</span>
+                                    <span style="color: var(--color-text-muted); font-size: 0.75rem; display: block;">SSH Port</span>
+                                    <span style="color: var(--color-text-primary); font-weight: 500;">${server.ssh_port || 22}</span>
                                 </div>
                                 <div class="server-info-item">
-                                    <span style="color: var(--gray-500); font-size: 0.75rem; display: block;">Auth Type</span>
-                                    <span style="color: var(--gray-800); font-weight: 500;">${authTypeLabel}</span>
+                                    <span style="color: var(--color-text-muted); font-size: 0.75rem; display: block;">Auth Type</span>
+                                    <span style="color: var(--color-text-primary); font-weight: 500;">${authTypeLabel}</span>
                                 </div>
                                 <div class="server-info-item">
-                                    <span style="color: var(--gray-500); font-size: 0.75rem; display: block;">User</span>
-                                    <span style="color: var(--gray-800); font-weight: 500;">${userTypeLabel}</span>
+                                    <span style="color: var(--color-text-muted); font-size: 0.75rem; display: block;">User</span>
+                                    <span style="color: var(--color-text-primary); font-weight: 500;">${userTypeLabel}</span>
                                 </div>
                             </div>
                         </div>
@@ -2926,7 +2926,7 @@
                             <label class="form-label">SSH Private Key</label>
                             <textarea class="form-input" rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"
                                       onchange="updateServerField('${stepId}', ${server.id}, 'ssh_key', this.value)">${server.ssh_key || ''}</textarea>
-                            <span style="color: var(--gray-500); font-size: 0.75rem;">Paste your private key content</span>
+                            <span style="color: var(--color-text-muted); font-size: 0.75rem;">Paste your private key content</span>
                         </div>
                     `;
                 }
@@ -2953,7 +2953,7 @@
                                     </svg>
                                 </button>
                             </div>
-                            <span style="color: var(--gray-500); font-size: 0.75rem;">Leave blank if same as SSH password</span>
+                            <span style="color: var(--color-text-muted); font-size: 0.75rem;">Leave blank if same as SSH password</span>
                         </div>
                     `;
                 }
