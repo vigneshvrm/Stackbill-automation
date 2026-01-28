@@ -210,6 +210,9 @@ module.exports = {
   // SSL
   executeSSL: createPlaybookHandler('ssl'),
 
+  // Load Balancer
+  executeLoadbalancer: createPlaybookHandler('loadbalancer'),
+
   // StackBill
   executeStackbill: createPlaybookHandler('stackbill'),
 

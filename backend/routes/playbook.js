@@ -117,6 +117,17 @@ router.post('/ssl',
 );
 
 /**
+ * @route   POST /api/playbook/loadbalancer
+ * @desc    Execute HAProxy load balancer installation playbook
+ * @access  Public
+ * @streaming Supports SSE with ?stream=true
+ */
+router.post('/loadbalancer',
+  validateServers,
+  asyncHandler(playbook.executeLoadbalancer)
+);
+
+/**
  * @route   POST /api/playbook/stackbill
  * @desc    Execute StackBill application deployment playbook
  * @access  Public

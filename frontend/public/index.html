@@ -1906,6 +1906,8 @@
                 relevantServers = envCheckServers.filter(s => s.purpose?.startsWith('k8s-'));
             } else if (stepId === 'rabbitmq') {
                 relevantServers = envCheckServers.filter(s => s.purpose === 'rabbitmq');
+            } else if (stepId === 'loadbalancer') {
+                relevantServers = envCheckServers.filter(s => s.purpose === 'loadbalancer');
             } else if (stepId === 'nfs' || stepId === 'kubectl' || stepId === 'helm' || stepId === 'ssl' || stepId === 'stackbill') {
                 relevantServers = envCheckServers.filter(s => s.purpose === 'nfs');
             }
