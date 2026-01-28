@@ -127,4 +127,22 @@ router.post('/stackbill',
   asyncHandler(playbook.executeStackbill)
 );
 
+/**
+ * @route   GET /api/playbook/status/:sessionId/:stepId
+ * @desc    Get active deployment status for reconnection
+ * @access  Public
+ */
+router.get('/status/:sessionId/:stepId',
+  asyncHandler(playbook.getDeploymentStatus)
+);
+
+/**
+ * @route   GET /api/playbook/active/:sessionId
+ * @desc    Get all active deployments for a session
+ * @access  Public
+ */
+router.get('/active/:sessionId',
+  asyncHandler(playbook.getActiveDeployments)
+);
+
 module.exports = router;

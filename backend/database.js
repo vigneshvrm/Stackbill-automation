@@ -198,11 +198,28 @@ db.exec(`
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
   );
 
+  -- Active deployments tracking (for reconnection support)
+  CREATE TABLE IF NOT EXISTS active_deployments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    step_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'running',
+    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    completed_at TEXT,
+    task_events TEXT DEFAULT '[]',
+    current_task TEXT,
+    error_message TEXT,
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+    UNIQUE(session_id, step_id)
+  );
+
   -- Create indexes for performance
   CREATE INDEX IF NOT EXISTS idx_servers_session ON servers(session_id);
   CREATE INDEX IF NOT EXISTS idx_servers_step ON servers(session_id, step_id);
   CREATE INDEX IF NOT EXISTS idx_credentials_session ON credentials(session_id);
   CREATE INDEX IF NOT EXISTS idx_completed_steps_session ON completed_steps(session_id);
+  CREATE INDEX IF NOT EXISTS idx_active_deployments_session ON active_deployments(session_id);
 `);
 
 // Migration: Add automation_mode column if it doesn't exist (for existing databases)
@@ -795,6 +812,118 @@ function markFileDownloaded(fileId) {
   return stmt.run(fileId).changes > 0;
 }
 
+// ==================== ACTIVE DEPLOYMENT OPERATIONS ====================
+
+/**
+ * Start tracking an active deployment
+ */
+function startActiveDeployment(sessionId, stepId) {
+  // First, clean up any stale deployment for this session/step
+  db.prepare('DELETE FROM active_deployments WHERE session_id = ? AND step_id = ?').run(sessionId, stepId);
+
+  const stmt = db.prepare(`
+    INSERT INTO active_deployments (session_id, step_id, status, started_at, updated_at, task_events)
+    VALUES (?, ?, 'running', datetime('now'), datetime('now'), '[]')
+  `);
+  stmt.run(sessionId, stepId);
+  return true;
+}
+
+/**
+ * Add a task event to an active deployment
+ */
+function addDeploymentEvent(sessionId, stepId, event) {
+  const row = db.prepare('SELECT task_events FROM active_deployments WHERE session_id = ? AND step_id = ?').get(sessionId, stepId);
+  if (!row) return false;
+
+  let events = [];
+  try {
+    events = JSON.parse(row.task_events || '[]');
+  } catch (e) {
+    events = [];
+  }
+
+  // Add timestamp to event
+  event.timestamp = new Date().toISOString();
+  events.push(event);
+
+  // Keep only last 500 events to prevent unbounded growth
+  if (events.length > 500) {
+    events = events.slice(-500);
+  }
+
+  const currentTask = event.type === 'task' ? event.task : (event.task || null);
+
+  db.prepare(`
+    UPDATE active_deployments
+    SET task_events = ?, current_task = COALESCE(?, current_task), updated_at = datetime('now')
+    WHERE session_id = ? AND step_id = ?
+  `).run(JSON.stringify(events), currentTask, sessionId, stepId);
+
+  return true;
+}
+
+/**
+ * Complete an active deployment
+ */
+function completeActiveDeployment(sessionId, stepId, success, errorMessage = null) {
+  const stmt = db.prepare(`
+    UPDATE active_deployments
+    SET status = ?, completed_at = datetime('now'), updated_at = datetime('now'), error_message = ?
+    WHERE session_id = ? AND step_id = ?
+  `);
+  stmt.run(success ? 'completed' : 'failed', errorMessage, sessionId, stepId);
+  return true;
+}
+
+/**
+ * Get active deployment status
+ */
+function getActiveDeployment(sessionId, stepId) {
+  const row = db.prepare(`
+    SELECT * FROM active_deployments WHERE session_id = ? AND step_id = ?
+  `).get(sessionId, stepId);
+
+  if (!row) return null;
+
+  return {
+    sessionId: row.session_id,
+    stepId: row.step_id,
+    status: row.status,
+    startedAt: row.started_at,
+    updatedAt: row.updated_at,
+    completedAt: row.completed_at,
+    currentTask: row.current_task,
+    errorMessage: row.error_message,
+    taskEvents: JSON.parse(row.task_events || '[]')
+  };
+}
+
+/**
+ * Get all active deployments for a session
+ */
+function getActiveDeploymentsForSession(sessionId) {
+  const rows = db.prepare(`
+    SELECT step_id, status, current_task, started_at, updated_at
+    FROM active_deployments
+    WHERE session_id = ? AND status = 'running'
+    ORDER BY started_at DESC
+  `).all(sessionId);
+
+  return rows;
+}
+
+/**
+ * Clean up old completed deployments (keep last 24 hours)
+ */
+function cleanupOldDeployments() {
+  db.prepare(`
+    DELETE FROM active_deployments
+    WHERE status IN ('completed', 'failed')
+    AND completed_at < datetime('now', '-24 hours')
+  `).run();
+}
+
 // ==================== CLEANUP OPERATIONS ====================
 
 /**
@@ -974,6 +1103,14 @@ module.exports = {
   // Cleanup
   cleanupSession,
   exportSessionCredentials,
+
+  // Active deployments
+  startActiveDeployment,
+  addDeploymentEvent,
+  completeActiveDeployment,
+  getActiveDeployment,
+  getActiveDeploymentsForSession,
+  cleanupOldDeployments,
 
   // Global settings
   getAllSettings,

@@ -6,6 +6,7 @@
 const { generateInventory, cleanupInventory } = require('../services/inventoryService');
 const { executePlaybook } = require('../services/playbookService');
 const { getPlaybookPath } = require('../utils/pathHelper');
+const db = require('../database');
 
 /**
  * Check if request wants streaming
@@ -23,6 +24,8 @@ function isStreamingRequest(req) {
  * @param {string} playbookType - Type of playbook
  */
 async function executePlaybookStream(req, res, playbookType) {
+  const sessionId = req.body.sessionId || req.query.sessionId;
+
   try {
     const { servers, variables = {} } = req.body;
     const playbookPath = getPlaybookPath(playbookType);
@@ -35,8 +38,17 @@ async function executePlaybookStream(req, res, playbookType) {
 
     const { inventoryId, inventoryPath } = await generateInventory(servers, playbookType);
 
+    // Start tracking this deployment
+    if (sessionId) {
+      db.startActiveDeployment(sessionId, playbookType);
+    }
+
     const sendEvent = (data) => {
       res.write(`data: ${JSON.stringify(data)}\n\n`);
+      // Also track in database for reconnection
+      if (sessionId) {
+        db.addDeploymentEvent(sessionId, playbookType, data);
+      }
     };
 
     try {
@@ -44,30 +56,47 @@ async function executePlaybookStream(req, res, playbookType) {
         sendEvent(output);
       });
 
-      sendEvent({
+      const completeEvent = {
         type: 'complete',
         success: true,
         credentials: result.credentials || {},
         stdout: result.stdout,
         stderr: result.stderr
-      });
+      };
+      sendEvent(completeEvent);
+
+      // Mark deployment as completed
+      if (sessionId) {
+        db.completeActiveDeployment(sessionId, playbookType, true);
+      }
 
       await cleanupInventory(inventoryId, servers);
       res.end();
     } catch (error) {
-      sendEvent({
+      const errorEvent = {
         type: 'complete',
         success: false,
         error: error.error || error.message,
         stdout: error.stdout,
         stderr: error.stderr,
         credentials: error.credentials || {}
-      });
+      };
+      sendEvent(errorEvent);
+
+      // Mark deployment as failed
+      if (sessionId) {
+        db.completeActiveDeployment(sessionId, playbookType, false, error.error || error.message);
+      }
+
       await cleanupInventory(inventoryId, servers);
       res.end();
     }
   } catch (error) {
     res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+    // Mark as failed
+    if (sessionId) {
+      db.completeActiveDeployment(sessionId, playbookType, false, error.message);
+    }
     res.end();
   }
 }
@@ -108,6 +137,50 @@ function createPlaybookHandler(playbookType) {
   };
 }
 
+/**
+ * Get deployment status for reconnection
+ * @param {object} req - Express request
+ * @param {object} res - Express response
+ */
+async function getDeploymentStatus(req, res) {
+  const { sessionId, stepId } = req.params;
+
+  if (!sessionId || !stepId) {
+    return res.status(400).json({ error: 'sessionId and stepId are required' });
+  }
+
+  const deployment = db.getActiveDeployment(sessionId, stepId);
+
+  if (!deployment) {
+    return res.status(404).json({ error: 'No active deployment found' });
+  }
+
+  res.json({
+    success: true,
+    deployment
+  });
+}
+
+/**
+ * Get all active deployments for a session
+ * @param {object} req - Express request
+ * @param {object} res - Express response
+ */
+async function getActiveDeployments(req, res) {
+  const { sessionId } = req.params;
+
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+
+  const deployments = db.getActiveDeploymentsForSession(sessionId);
+
+  res.json({
+    success: true,
+    deployments
+  });
+}
+
 // Export individual handlers
 module.exports = {
   // MySQL
@@ -138,5 +211,9 @@ module.exports = {
   executeSSL: createPlaybookHandler('ssl'),
 
   // StackBill
-  executeStackbill: createPlaybookHandler('stackbill')
+  executeStackbill: createPlaybookHandler('stackbill'),
+
+  // Status endpoints
+  getDeploymentStatus,
+  getActiveDeployments
 };

@@ -1955,6 +1955,18 @@
             renderStepCards();
             renderSummary();
 
+            // Check for active deployments and recover state
+            const activeDeployment = await checkActiveDeployments();
+            if (activeDeployment) {
+                console.log('Found active deployment:', activeDeployment.step_id);
+                activeDeploymentStep = activeDeployment.step_id;
+                // Open the panel for the active deployment and recover state
+                openStepPanel(activeDeployment.step_id);
+                // Wait a bit for panel to render, then recover state
+                setTimeout(() => recoverDeploymentState(activeDeployment.step_id), 500);
+                return; // Don't auto-continue if recovering
+            }
+
             // Auto-open first incomplete step if in auto mode
             const firstIncomplete = DEPLOYMENT_STEPS.find(step => !state.completedSteps.has(step.id));
             if (firstIncomplete && state.automationMode === 'auto' && state.completedSteps.size > 0) {
@@ -3723,6 +3735,9 @@
             let lastErrorMessage = null; // Store last error for final display
 
             try {
+                // Track this as the active deployment for visibility change handling
+                activeDeploymentStep = stepId;
+
                 // Include session ID in URL for logging traceability
                 const sessionParam = state.sessionId ? `&sessionId=${state.sessionId}` : '';
                 const response = await fetch(`/api/playbook/${stepId}?stream=true${sessionParam}`, {
@@ -3791,6 +3806,9 @@
                 }
 
             } catch (error) {
+                // Clear the active deployment tracking on error
+                activeDeploymentStep = null;
+
                 showResult(stepId, 'error', error.message);
                 submitBtn.disabled = false;
                 const retryText = step.type === 'check'
@@ -3873,6 +3891,9 @@
                     renderCredentials(stepId);
                 }
             } else if (data.type === 'complete') {
+                // Clear the active deployment tracking
+                activeDeploymentStep = null;
+
                 const submitBtn = document.getElementById(`submit-${stepId}`);
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = `<span>&#128640;</span> Deploy ${step.title}`;
@@ -4574,6 +4595,185 @@ Note: Server passwords are stored encrypted and will be available when you resum
                 } else if (renameModal.classList.contains('active')) {
                     hideRenameSessionModal();
                 }
+            }
+        });
+
+        // ==================== DEPLOYMENT RECONNECTION ====================
+        // Track if a deployment is currently running (for visibility change handling)
+        let activeDeploymentStep = null;
+
+        /**
+         * Check for active deployments and recover state if found
+         */
+        async function checkActiveDeployments() {
+            if (!state.sessionId) return null;
+
+            try {
+                const response = await fetch(`/api/playbook/active/${state.sessionId}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success && data.deployments && data.deployments.length > 0) {
+                        return data.deployments[0]; // Return the first (most recent) active deployment
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to check active deployments:', e);
+            }
+            return null;
+        }
+
+        /**
+         * Recover deployment state from server and update UI
+         */
+        async function recoverDeploymentState(stepId) {
+            if (!state.sessionId) return;
+
+            try {
+                const response = await fetch(`/api/playbook/status/${state.sessionId}/${stepId}`);
+                if (!response.ok) return;
+
+                const data = await response.json();
+                if (!data.success || !data.deployment) return;
+
+                const deployment = data.deployment;
+                console.log('Recovering deployment state:', stepId, deployment.status);
+
+                // Find the task list container for this step
+                const taskList = document.querySelector(`#form-${stepId} .task-list`);
+                const progressBar = document.querySelector(`#form-${stepId} .progress-fill`);
+                const progressPct = document.querySelector(`#form-${stepId} .progress-pct`);
+
+                if (!taskList) {
+                    console.warn('Task list not found for step:', stepId);
+                    return;
+                }
+
+                // Clear existing task items
+                taskList.innerHTML = '';
+
+                // Replay task events to rebuild UI
+                const events = deployment.taskEvents || [];
+                const taskResults = new Map();
+                let totalServers = 1;
+
+                // First pass: count servers from events
+                events.forEach(event => {
+                    if (event.type === 'task_result' && event.host) {
+                        // Estimate server count from unique hosts
+                        if (!taskResults.has('__hosts__')) {
+                            taskResults.set('__hosts__', new Set());
+                        }
+                        taskResults.get('__hosts__').add(event.host);
+                    }
+                });
+                if (taskResults.has('__hosts__')) {
+                    totalServers = Math.max(1, taskResults.get('__hosts__').size);
+                    taskResults.delete('__hosts__');
+                }
+
+                // Second pass: replay events
+                let completedTasks = 0;
+                let totalTasks = 0;
+
+                events.forEach(event => {
+                    if (event.type === 'task') {
+                        totalTasks++;
+                        addTaskItem(taskList, event.task, totalServers);
+                        if (!taskResults.has(event.task)) {
+                            taskResults.set(event.task, {
+                                success: new Set(),
+                                failed: new Set(),
+                                skipped: new Set(),
+                                errors: new Map()
+                            });
+                        }
+                    } else if (event.type === 'task_result') {
+                        if (!taskResults.has(event.task)) {
+                            taskResults.set(event.task, {
+                                success: new Set(),
+                                failed: new Set(),
+                                skipped: new Set(),
+                                errors: new Map()
+                            });
+                        }
+                        const taskData = taskResults.get(event.task);
+                        if (event.status === 'ok' || event.status === 'changed') {
+                            taskData.success.add(event.host);
+                        } else if (event.status === 'fatal') {
+                            taskData.failed.add(event.host);
+                            if (event.errorMessage) {
+                                taskData.errors.set(event.host, event.errorMessage);
+                            }
+                        } else if (event.status === 'skipping') {
+                            taskData.skipped.add(event.host);
+                        }
+                        updateTaskItem(taskList, event.task, taskData, totalServers);
+                    } else if (event.type === 'complete') {
+                        completedTasks = totalTasks;
+                        // Handle completion
+                        if (event.success) {
+                            showResult(stepId, 'success', 'Deployment completed successfully!');
+                        } else {
+                            showResult(stepId, 'error', event.error || 'Deployment failed');
+                        }
+                    }
+                });
+
+                // Update progress
+                if (progressBar && progressPct) {
+                    const pct = deployment.status === 'completed' || deployment.status === 'failed'
+                        ? 100
+                        : (totalTasks > 0 ? Math.min(99, Math.round((completedTasks / totalTasks) * 100)) : 0);
+                    progressBar.style.width = `${pct}%`;
+                    progressPct.textContent = `${pct}%`;
+                }
+
+                // Show appropriate status
+                if (deployment.status === 'running') {
+                    showResult(stepId, 'info', `Deployment in progress... (${deployment.currentTask || 'starting'})`);
+                    activeDeploymentStep = stepId;
+                } else if (deployment.status === 'completed') {
+                    showResult(stepId, 'success', 'Deployment completed successfully!');
+                } else if (deployment.status === 'failed') {
+                    showResult(stepId, 'error', deployment.errorMessage || 'Deployment failed');
+                }
+
+                return deployment;
+            } catch (e) {
+                console.error('Failed to recover deployment state:', e);
+            }
+        }
+
+        /**
+         * Poll for deployment status when tab becomes visible
+         */
+        async function pollDeploymentStatus() {
+            if (!activeDeploymentStep || !state.sessionId) return;
+
+            try {
+                const response = await fetch(`/api/playbook/status/${state.sessionId}/${activeDeploymentStep}`);
+                if (!response.ok) return;
+
+                const data = await response.json();
+                if (!data.success || !data.deployment) return;
+
+                // Recover and update UI
+                await recoverDeploymentState(activeDeploymentStep);
+
+                // If deployment completed, clear active step
+                if (data.deployment.status !== 'running') {
+                    activeDeploymentStep = null;
+                }
+            } catch (e) {
+                console.error('Failed to poll deployment status:', e);
+            }
+        }
+
+        // Handle visibility change - poll for updates when tab becomes visible
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && activeDeploymentStep) {
+                console.log('Tab became visible, checking deployment status...');
+                pollDeploymentStatus();
             }
         });
 
