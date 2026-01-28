@@ -1580,19 +1580,8 @@
                 type: 'deployment'
             },
             {
-                id: 'ssl',
-                number: 10,
-                title: 'SSL (Optional)',
-                fullTitle: 'SSL Certificates (Additional)',
-                description: 'Update/regenerate SSL certificates (optional)',
-                icon: '&#128274;',
-                type: 'config',
-                hasSSLConfig: true,
-                isOptional: true
-            },
-            {
                 id: 'stackbill',
-                number: 11,
+                number: 10,
                 title: 'StackBill',
                 fullTitle: 'StackBill Application',
                 description: 'Deploy StackBill application',
@@ -1908,9 +1897,6 @@
             } else if (stepId === 'rabbitmq') {
                 relevantServers = envCheckServers.filter(s => s.purpose === 'rabbitmq');
             } else if (stepId === 'loadbalancer') {
-                relevantServers = envCheckServers.filter(s => s.purpose === 'loadbalancer');
-            } else if (stepId === 'ssl') {
-                // SSL step targets the load balancer server
                 relevantServers = envCheckServers.filter(s => s.purpose === 'loadbalancer');
             } else if (stepId === 'nfs' || stepId === 'kubectl' || stepId === 'helm' || stepId === 'stackbill') {
                 relevantServers = envCheckServers.filter(s => s.purpose === 'nfs');
@@ -2468,100 +2454,6 @@
                         <p style="color: var(--color-text-muted); font-size: 0.85rem; margin-bottom: 12px;">
                             Load balancer will be installed on the following server(s).
                         </p>
-                        <div class="servers-container" id="servers-${step.id}">
-                            <!-- Servers rendered here -->
-                        </div>
-                    </div>
-                `;
-            }
-            // SSL Configuration only (for the optional SSL step)
-            else if (step.hasSSLConfig) {
-                const sslType = state.sslConfig.type || 'letsencrypt';
-                formHtml = `
-                    <div class="form-section" style="background: rgba(102, 126, 234, 0.05); padding: 16px; border-radius: 10px; border: 1px solid rgba(102, 126, 234, 0.2); margin-bottom: 20px;">
-                        <p style="color: var(--color-text-secondary); font-size: 0.85rem; margin: 0;">
-                            <strong style="color: var(--primary);">&#9432; Note:</strong> SSL was already configured during Load Balancer setup.
-                            Use this step only if you need to update or regenerate certificates.
-                        </p>
-                    </div>
-                    <div class="form-section">
-                        <div class="form-section-title">&#128274; Update SSL Certificate</div>
-                        <p style="color: var(--color-text-muted); font-size: 0.85rem; margin-bottom: 16px;">
-                            Update or regenerate SSL certificates for your Load Balancer.
-                        </p>
-
-                        <!-- SSL Type Radio Buttons -->
-                        <div style="margin-bottom: 20px;">
-                            <div style="font-size: 0.85rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 12px;">Certificate Type</div>
-                            <div style="display: flex; flex-direction: column; gap: 10px;">
-                                <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; padding: 12px; border-radius: 8px; border: 2px solid ${sslType === 'letsencrypt' ? 'var(--primary)' : 'var(--color-border)'}; background: ${sslType === 'letsencrypt' ? 'rgba(102, 126, 234, 0.05)' : 'white'}; transition: all 0.2s;">
-                                    <input type="radio" name="sslType" value="letsencrypt" ${sslType === 'letsencrypt' ? 'checked' : ''} onchange="setSSLType('letsencrypt')" style="margin-top: 2px;">
-                                    <div>
-                                        <div style="font-weight: 600; color: var(--color-text-primary);">&#127919; Let's Encrypt (Recommended)</div>
-                                        <div style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 2px;">Free trusted certificate with auto-renewal (requires domain validation)</div>
-                                    </div>
-                                </label>
-                                <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; padding: 12px; border-radius: 8px; border: 2px solid ${sslType === 'upload' ? 'var(--primary)' : 'var(--color-border)'}; background: ${sslType === 'upload' ? 'rgba(102, 126, 234, 0.05)' : 'white'}; transition: all 0.2s;">
-                                    <input type="radio" name="sslType" value="upload" ${sslType === 'upload' ? 'checked' : ''} onchange="setSSLType('upload')" style="margin-top: 2px;">
-                                    <div>
-                                        <div style="font-weight: 600; color: var(--color-text-primary);">&#128194; Upload Custom Certificate</div>
-                                        <div style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 2px;">Use your own certificate from a Certificate Authority</div>
-                                    </div>
-                                </label>
-                            </div>
-                        </div>
-
-                        <!-- Domain Name -->
-                        <div class="form-group" style="margin-bottom: 16px;">
-                            <label class="form-label">Domain Name *</label>
-                            <input type="text" class="form-input" id="ssl_domain"
-                                   placeholder="e.g., stackbill.example.com"
-                                   value="${state.sslConfig.domain || ''}"
-                                   onchange="updateSSLConfig('domain', this.value)">
-                        </div>
-
-                        <!-- Let's Encrypt Notice -->
-                        <div id="ssl-letsencrypt-info" style="display: ${sslType === 'letsencrypt' ? 'block' : 'none'};">
-                            <div style="background: rgba(16, 185, 129, 0.05); padding: 12px; border-radius: 8px; border: 1px solid rgba(16, 185, 129, 0.2); margin-bottom: 16px;">
-                                <p style="color: var(--color-text-secondary); font-size: 0.85rem; margin: 0;">
-                                    <strong style="color: var(--success);">&#9989; Requirements:</strong>
-                                    <ul style="margin: 8px 0 0 20px; padding: 0;">
-                                        <li>Domain must point to the load balancer's public IP</li>
-                                        <li>Port 80 must be accessible for HTTP validation</li>
-                                        <li>Certificate will auto-renew every 90 days</li>
-                                    </ul>
-                                </p>
-                            </div>
-                        </div>
-
-                        <!-- Upload Certificate Form -->
-                        <div id="ssl-upload-form" style="display: ${sslType === 'upload' ? 'block' : 'none'};">
-                            <div class="form-group">
-                                <label class="form-label">Full Chain Certificate (fullchain.pem) *</label>
-                                <textarea class="form-input" id="ssl_certificate" rows="6"
-                                          placeholder="-----BEGIN CERTIFICATE-----&#10;...certificate content...&#10;-----END CERTIFICATE-----"
-                                          onchange="updateSSLConfig('certificate', this.value)"
-                                          style="font-family: monospace; font-size: 0.85rem;">${state.sslConfig.certificate || ''}</textarea>
-                                <span style="color: var(--color-text-muted); font-size: 0.75rem;">
-                                    Paste your full chain SSL certificate in PEM format (including intermediate certificates)
-                                </span>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Private Key (privkey.pem) *</label>
-                                <textarea class="form-input" id="ssl_private_key" rows="6"
-                                          placeholder="-----BEGIN PRIVATE KEY-----&#10;...key content...&#10;-----END PRIVATE KEY-----"
-                                          onchange="updateSSLConfig('privateKey', this.value)"
-                                          style="font-family: monospace; font-size: 0.85rem;">${state.sslConfig.privateKey || ''}</textarea>
-                                <span style="color: var(--color-text-muted); font-size: 0.75rem;">
-                                    Paste your private key in PEM format (keep this secure!)
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Target Server (Load Balancer) -->
-                    <div class="form-section">
-                        <div class="form-section-title">&#9878; Target Server (Load Balancer)</div>
                         <div class="servers-container" id="servers-${step.id}">
                             <!-- Servers rendered here -->
                         </div>
@@ -3247,8 +3139,8 @@
                 }
             }
 
-            // SSL-specific validation (for both ssl and loadbalancer steps)
-            if (stepId === 'ssl' || stepId === 'loadbalancer') {
+            // SSL-specific validation for loadbalancer step
+            if (stepId === 'loadbalancer') {
                 if (!state.sslConfig.domain) {
                     showResult(stepId, 'error', 'Please enter a domain name for the SSL certificate.');
                     return;
@@ -3430,21 +3322,6 @@
                     return !sslDomain || !state.sslConfig?.certificate || !state.sslConfig?.privateKey;
                 }
                 // If domain is pre-configured, no manual config needed
-                return !sslDomain;
-            }
-
-            // SSL step is now optional and always allows auto-proceed if loadbalancer was done
-            if (step.id === 'ssl') {
-                // If loadbalancer step is already completed, SSL is optional
-                if (state.completedSteps.has('loadbalancer')) {
-                    return false; // Can auto-proceed, SSL was configured in loadbalancer step
-                }
-                // Otherwise, check SSL config
-                const sslDomain = state.sslConfig?.domain;
-                const sslType = state.sslConfig?.type || 'letsencrypt';
-                if (sslType === 'upload') {
-                    return !sslDomain || !state.sslConfig?.certificate || !state.sslConfig?.privateKey;
-                }
                 return !sslDomain;
             }
 
@@ -3645,24 +3522,6 @@
                         : [{ name: 'Configuring HAProxy frontend' }, { name: 'Configuring backend servers' }, { name: 'Enabling statistics page' }, { name: 'Testing HAProxy configuration' }, { name: 'Restarting HAProxy service' }, { name: 'Verifying load balancer' }];
                     return [...baseTasks, ...sslTasks, ...configTasks];
                 })(),
-                'ssl': state.sslConfig.type === 'upload' ? [
-                    { name: 'Creating SSL directory' },
-                    { name: 'Validating certificate format' },
-                    { name: 'Validating private key format' },
-                    { name: 'Writing fullchain certificate to server' },
-                    { name: 'Writing private key to server' },
-                    { name: 'Creating combined PEM for HAProxy' },
-                    { name: 'Setting file permissions' },
-                    { name: 'Verifying certificate' }
-                ] : [
-                    { name: 'Installing certbot' },
-                    { name: 'Creating SSL directory' },
-                    { name: `Requesting Let's Encrypt certificate for ${state.sslConfig.domain || 'domain'}` },
-                    { name: 'Copying certificate files' },
-                    { name: 'Creating combined PEM for HAProxy' },
-                    { name: 'Setting file permissions' },
-                    { name: 'Verifying certificate' }
-                ],
                 'stackbill': [
                     { name: 'Verifying cluster connectivity' },
                     { name: 'Creating StackBill namespace' },
@@ -3722,8 +3581,9 @@
                 payload.variables.nfs_client_ip_range = document.getElementById('client_ip_range')?.value || state.nfsConfig?.clientIpRange || '*';
             }
 
-            // Add SSL configuration for loadbalancer and ssl steps
-            if (stepId === 'loadbalancer' || stepId === 'ssl') {
+            // Add load balancer config (includes SSL)
+            if (stepId === 'loadbalancer') {
+                // SSL configuration
                 payload.variables.ssl_certificate_type = state.sslConfig?.type || 'letsencrypt';
                 payload.variables.domain_name = state.sslConfig?.domain || '';
                 // For upload type, include certificate content
@@ -3731,10 +3591,7 @@
                     payload.variables.fullchain_certificate = state.sslConfig?.certificate || '';
                     payload.variables.private_key = state.sslConfig?.privateKey || '';
                 }
-            }
-
-            // Add load balancer specific config
-            if (stepId === 'loadbalancer') {
+                // Load balancer specific config
                 payload.variables.load_balancer_type = state.loadBalancerConfig?.type || 'haproxy';
                 payload.variables.backend_port = state.loadBalancerConfig?.backendPort || '30080';
                 // Add custom hostname if provided

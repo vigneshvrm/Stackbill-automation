@@ -207,9 +207,6 @@ module.exports = {
   // Helm
   executeHelm: createPlaybookHandler('helm'),
 
-  // SSL
-  executeSSL: createPlaybookHandler('ssl'),
-
   // Load Balancer
   executeLoadbalancer: createPlaybookHandler('loadbalancer'),
 

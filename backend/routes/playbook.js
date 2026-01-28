@@ -106,17 +106,6 @@ router.post('/helm',
 );
 
 /**
- * @route   POST /api/playbook/ssl
- * @desc    Execute SSL certificate generation playbook
- * @access  Public
- * @streaming Supports SSE with ?stream=true
- */
-router.post('/ssl',
-  validateServers,
-  asyncHandler(playbook.executeSSL)
-);
-
-/**
  * @route   POST /api/playbook/loadbalancer
  * @desc    Execute HAProxy load balancer installation playbook
  * @access  Public
