@@ -1120,6 +1120,85 @@ app.post('/api/playbook/stackbill', async (req, res) => {
 });
 
 // =====================================================
+// DEPLOYMENT STATUS API ENDPOINTS (for reconnection)
+// =====================================================
+
+// Get deployment status for reconnection
+app.get('/api/playbook/status/:sessionId/:stepId', (req, res) => {
+  const { sessionId, stepId } = req.params;
+
+  if (!sessionId || !stepId) {
+    return res.status(400).json({ error: 'sessionId and stepId are required' });
+  }
+
+  const deployment = db.getActiveDeployment(sessionId, stepId);
+
+  if (!deployment) {
+    return res.status(404).json({ error: 'No active deployment found' });
+  }
+
+  res.json({
+    success: true,
+    deployment
+  });
+});
+
+// Get all active deployments for a session
+app.get('/api/playbook/active/:sessionId', (req, res) => {
+  const { sessionId } = req.params;
+
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+
+  try {
+    const deployments = db.getActiveDeploymentsForSession(sessionId);
+    res.json({
+      success: true,
+      deployments
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get active deployments', details: error.message });
+  }
+});
+
+// Get deployment events since a timestamp (for SSE reconnection)
+app.get('/api/playbook/events/:sessionId/:stepId', (req, res) => {
+  const { sessionId, stepId } = req.params;
+  const { since } = req.query;
+
+  if (!sessionId || !stepId) {
+    return res.status(400).json({ error: 'sessionId and stepId are required' });
+  }
+
+  const deployment = db.getActiveDeployment(sessionId, stepId);
+
+  if (!deployment) {
+    return res.status(404).json({ error: 'No active deployment found' });
+  }
+
+  let events = deployment.taskEvents || [];
+
+  // If 'since' timestamp provided, filter events after that time
+  if (since) {
+    const sinceTime = new Date(since).getTime();
+    events = events.filter(e => {
+      const eventTime = e.timestamp ? new Date(e.timestamp).getTime() : 0;
+      return eventTime > sinceTime;
+    });
+  }
+
+  res.json({
+    success: true,
+    status: deployment.status,
+    currentTask: deployment.currentTask,
+    errorMessage: deployment.errorMessage,
+    events: events,
+    isComplete: deployment.status === 'completed' || deployment.status === 'failed'
+  });
+});
+
+// =====================================================
 // SESSION MANAGEMENT API ENDPOINTS
 // =====================================================
 
