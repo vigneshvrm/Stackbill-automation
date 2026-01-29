@@ -2661,11 +2661,10 @@
             let defaultRole = 'primary';
             let defaultPurpose = '';
 
-            // Environment check - set purpose based on order
+            // Environment check - always start with empty purpose (user must select)
             if (stepId === 'env-check') {
-                const purposes = ['k8s-master', 'k8s-worker', 'mysql-primary', 'mongodb-primary', 'rabbitmq', 'nfs'];
-                defaultPurpose = purposes[serverIndex] || 'nfs';
-                defaultRole = defaultPurpose;
+                defaultPurpose = '';  // No pre-selection - user must choose
+                defaultRole = '';
             } else if (step.hasMode && mode === 'cluster') {
                 if (stepId === 'mysql') {
                     defaultRole = serverIndex === 0 ? 'primary' : 'secondary';
