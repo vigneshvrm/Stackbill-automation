@@ -47,24 +47,52 @@
 
     # ==================== KUBECTL INSTALLATION ====================
     - name: Get latest kubectl version
-      ansible.builtin.shell: curl -L -s https://dl.k8s.io/release/stable.txt
-      register: kubectl_version
+      ansible.builtin.shell: |
+        version=$(curl -L -s --connect-timeout 10 --max-time 30 https://dl.k8s.io/release/stable.txt 2>/dev/null)
+        # Validate that version looks like v1.XX.X
+        if echo "$version" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+          echo "$version"
+        else
+          # Fallback to a known stable version if API fails
+          echo "v1.30.0"
+        fi
+      register: kubectl_version_raw
       changed_when: false
+      retries: 3
+      delay: 5
+      until: kubectl_version_raw.rc == 0
+
+    - name: Set kubectl version fact
+      ansible.builtin.set_fact:
+        kubectl_version: "{{ kubectl_version_raw.stdout | trim }}"
+
+    - name: Validate kubectl version format
+      ansible.builtin.assert:
+        that:
+          - kubectl_version is match('^v[0-9]+\.[0-9]+\.[0-9]+$')
+        fail_msg: "Invalid kubectl version format: {{ kubectl_version }}. Expected format like v1.30.0"
+        success_msg: "Kubectl version validated: {{ kubectl_version }}"
 
     - name: Display kubectl version to install
       ansible.builtin.debug:
-        msg: "Installing kubectl version: {{ kubectl_version.stdout }}"
+        msg: "Installing kubectl version: {{ kubectl_version }}"
 
     - name: Download kubectl binary
       ansible.builtin.get_url:
-        url: "https://dl.k8s.io/release/{{ kubectl_version.stdout }}/bin/linux/amd64/kubectl"
+        url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
         dest: "/tmp/kubectl"
         mode: '0755'
+        timeout: 120
+      retries: 3
+      delay: 10
 
     - name: Download kubectl checksum
       ansible.builtin.get_url:
-        url: "https://dl.k8s.io/release/{{ kubectl_version.stdout }}/bin/linux/amd64/kubectl.sha256"
+        url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl.sha256"
         dest: "/tmp/kubectl.sha256"
+        timeout: 60
+      retries: 3
+      delay: 10
 
     - name: Verify kubectl checksum
       ansible.builtin.shell: |
@@ -167,7 +195,7 @@
           - "======================================"
           - "KUBECTL & ISTIO INSTALLATION COMPLETE"
           - "======================================"
-          - "Kubectl: {{ kubectl_version.stdout }}"
+          - "Kubectl: {{ kubectl_version }}"
           - "Istioctl: {{ istio_version }}"
           - "Kubeconfig: {{ 'Configured' if kubeconfig_stat.stat.exists else 'NOT CONFIGURED - Copy from K8s master' }}"
           - ""
