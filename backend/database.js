@@ -495,6 +495,29 @@ function getSession(sessionId) {
  * List all sessions
  */
 function listSessions() {
+  // First, sync any completed deployments to completed_steps for all sessions
+  // This ensures the session list shows accurate progress
+  const completedDeployments = db.prepare(`
+    SELECT ad.session_id, ad.step_id
+    FROM active_deployments ad
+    WHERE ad.status = 'completed'
+    AND NOT EXISTS (
+      SELECT 1 FROM completed_steps cs
+      WHERE cs.session_id = ad.session_id AND cs.step_id = ad.step_id
+    )
+  `).all();
+
+  if (completedDeployments.length > 0) {
+    const syncStmt = db.prepare(`
+      INSERT OR IGNORE INTO completed_steps (session_id, step_id, completed_at, status)
+      VALUES (?, ?, datetime('now'), 'completed')
+    `);
+    for (const dep of completedDeployments) {
+      console.log(`Auto-syncing completed deployment in listSessions: ${dep.step_id} for session ${dep.session_id}`);
+      syncStmt.run(dep.session_id, dep.step_id);
+    }
+  }
+
   return db.prepare(`
     SELECT s.*,
            (SELECT COUNT(*) FROM completed_steps WHERE session_id = s.id) as steps_completed,
