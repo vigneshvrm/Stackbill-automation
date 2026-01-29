@@ -3299,7 +3299,7 @@
             // Auto-click the submit button after a short delay (for UI to render)
             await new Promise(resolve => setTimeout(resolve, 500));
 
-            const submitBtn = document.getElementById('stepSubmitBtn');
+            const submitBtn = document.getElementById(`submit-${nextStep.id}`);
             if (submitBtn && !submitBtn.disabled) {
                 // Validate that we have servers configured
                 const servers = state.servers[nextStep.id] || [];
