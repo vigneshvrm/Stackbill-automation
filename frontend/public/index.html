@@ -726,6 +726,11 @@
             to { transform: rotate(360deg); }
         }
 
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
         /* Credentials Section */
         .credentials-section {
             margin-top: var(--space-5);
@@ -3569,6 +3574,63 @@
             return new Promise(resolve => setTimeout(resolve, ms));
         }
 
+        // SSE Reconnection Configuration
+        const SSE_RECONNECT_CONFIG = {
+            initialDelay: 1000,      // Start with 1 second
+            maxDelay: 30000,         // Max 30 seconds between retries
+            multiplier: 2,           // Double delay each retry
+            maxRetries: 20           // Give up after 20 retries (~10 minutes max)
+        };
+
+        /**
+         * Show reconnection status indicator in the task list
+         */
+        function showReconnectionStatus(taskList, message, isError = false) {
+            let statusEl = taskList.querySelector('.sse-reconnect-status');
+            if (!statusEl) {
+                statusEl = document.createElement('div');
+                statusEl.className = 'sse-reconnect-status';
+                statusEl.style.cssText = 'padding: 8px 12px; margin: 8px 0; border-radius: 4px; font-size: 0.9rem; display: flex; align-items: center; gap: 8px;';
+                taskList.appendChild(statusEl);
+            }
+            statusEl.style.background = isError ? '#fef3f2' : '#f0f7ff';
+            statusEl.style.borderLeft = isError ? '3px solid #dc3545' : '3px solid #0d6efd';
+            statusEl.style.color = isError ? '#dc3545' : '#0d6efd';
+            statusEl.innerHTML = isError
+                ? `<span>&#9888;</span> ${message}`
+                : `<span style="animation: pulse 1s infinite;">&#8635;</span> ${message}`;
+            taskList.scrollTop = taskList.scrollHeight;
+        }
+
+        /**
+         * Hide reconnection status indicator
+         */
+        function hideReconnectionStatus(taskList) {
+            const statusEl = taskList.querySelector('.sse-reconnect-status');
+            if (statusEl) {
+                statusEl.remove();
+            }
+        }
+
+        /**
+         * Poll for deployment events (used during reconnection)
+         * Returns: { events, isComplete, status, errorMessage }
+         */
+        async function pollDeploymentEvents(sessionId, stepId, sinceTimestamp = null) {
+            const sinceParam = sinceTimestamp ? `?since=${encodeURIComponent(sinceTimestamp)}` : '';
+            const response = await fetch(`/api/playbook/events/${sessionId}/${stepId}${sinceParam}`);
+
+            if (!response.ok) {
+                if (response.status === 404) {
+                    // No deployment found - may have completed or never started
+                    return { events: [], isComplete: true, status: 'unknown', errorMessage: null };
+                }
+                throw new Error(`Failed to poll events: ${response.status}`);
+            }
+
+            return await response.json();
+        }
+
         // Real API deployment (for when DEMO_MODE is false)
         async function executeRealDeployment(stepId, step, servers, taskList, progressBar, progressPct, submitBtn) {
             const mode = state.modes[stepId] || 'single';
@@ -3692,76 +3754,194 @@
             const taskResults = new Map();
             let lastErrorMessage = null; // Store last error for final display
 
+            // Track last event timestamp for reconnection
+            let lastEventTimestamp = null;
+            let deploymentComplete = false;
+
+            function updateProgress(forceComplete = false) {
+                // Cap at 99% until we get the actual complete event to avoid false 100%
+                let pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+                if (!forceComplete && pct >= 100) {
+                    pct = 99; // Show 99% max until playbook actually completes
+                }
+                progressBar.style.width = `${pct}%`;
+                progressPct.textContent = `${pct}%`;
+            }
+
+            // Process a single event (used by both streaming and polling)
+            function processEvent(data) {
+                // Track timestamp for reconnection
+                if (data.timestamp) {
+                    lastEventTimestamp = data.timestamp;
+                }
+
+                // Check if deployment is complete
+                if (data.type === 'complete') {
+                    deploymentComplete = true;
+                }
+
+                handleStreamEvent(stepId, data, taskList, progressBar, progressPct,
+                    (taskName) => {
+                        // New task started
+                        totalTasks++;
+                        currentTaskName = taskName;
+                    },
+                    (taskName) => {
+                        // Task completed - only count once per unique task
+                        if (taskName === currentTaskName) {
+                            completedTasks++;
+                            currentTaskName = '';
+                            updateProgress();
+                        }
+                    },
+                    failedHosts,
+                    hostNameMap,
+                    taskResults,
+                    totalServers);
+            }
+
+            // Main streaming function with reconnection support
+            async function streamWithReconnect() {
+                let retryCount = 0;
+                let retryDelay = SSE_RECONNECT_CONFIG.initialDelay;
+                let initialRequestMade = false;
+
+                while (!deploymentComplete && retryCount < SSE_RECONNECT_CONFIG.maxRetries) {
+                    try {
+                        // First request starts the deployment, subsequent requests poll for missed events
+                        if (!initialRequestMade) {
+                            // Initial streaming request - starts the deployment
+                            const sessionParam = state.sessionId ? `&sessionId=${state.sessionId}` : '';
+                            const response = await fetch(`/api/playbook/${stepId}?stream=true${sessionParam}`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Accept': 'text/event-stream'
+                                },
+                                body: JSON.stringify({ ...payload, sessionId: state.sessionId })
+                            });
+
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+
+                            initialRequestMade = true;
+                            retryCount = 0; // Reset retry count on successful connection
+                            retryDelay = SSE_RECONNECT_CONFIG.initialDelay;
+                            hideReconnectionStatus(taskList);
+
+                            const reader = response.body.getReader();
+                            const decoder = new TextDecoder();
+                            let buffer = '';
+
+                            // Stream events
+                            while (true) {
+                                const { done, value } = await reader.read();
+                                if (done) break;
+
+                                buffer += decoder.decode(value, { stream: true });
+                                const lines = buffer.split('\n');
+                                buffer = lines.pop() || '';
+
+                                for (const line of lines) {
+                                    if (line.startsWith('data: ')) {
+                                        try {
+                                            const data = JSON.parse(line.substring(6));
+                                            processEvent(data);
+                                        } catch (e) {
+                                            console.error('Error parsing SSE:', e);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Stream ended - check if deployment completed normally
+                            if (deploymentComplete) {
+                                console.log('Deployment completed normally');
+                                break;
+                            }
+
+                            // Stream closed unexpectedly - enter reconnection mode
+                            console.log('SSE stream closed unexpectedly, entering reconnection mode...');
+                        } else {
+                            // Reconnection mode - poll for missed events
+                            showReconnectionStatus(taskList, `Reconnecting... (attempt ${retryCount + 1})`);
+
+                            await sleep(retryDelay);
+
+                            // Poll for events since last timestamp
+                            const pollResult = await pollDeploymentEvents(state.sessionId, stepId, lastEventTimestamp);
+
+                            if (pollResult.success === false) {
+                                throw new Error(pollResult.error || 'Failed to poll events');
+                            }
+
+                            // Process any missed events
+                            if (pollResult.events && pollResult.events.length > 0) {
+                                console.log(`Processing ${pollResult.events.length} missed events`);
+                                for (const event of pollResult.events) {
+                                    processEvent(event);
+                                }
+                                // Reset retry on successful event receipt
+                                retryCount = 0;
+                                retryDelay = SSE_RECONNECT_CONFIG.initialDelay;
+                            }
+
+                            // Check if deployment is complete
+                            if (pollResult.isComplete) {
+                                console.log('Deployment detected as complete via polling');
+                                deploymentComplete = true;
+
+                                // If we have a final status, create a synthetic complete event
+                                if (!deploymentComplete) {
+                                    const syntheticComplete = {
+                                        type: 'complete',
+                                        success: pollResult.status === 'completed',
+                                        error: pollResult.errorMessage,
+                                        credentials: {}
+                                    };
+                                    processEvent(syntheticComplete);
+                                }
+                                hideReconnectionStatus(taskList);
+                                break;
+                            }
+
+                            // Increase delay for next retry (exponential backoff)
+                            retryDelay = Math.min(retryDelay * SSE_RECONNECT_CONFIG.multiplier, SSE_RECONNECT_CONFIG.maxDelay);
+                        }
+
+                        retryCount++;
+                    } catch (error) {
+                        console.error('Streaming/polling error:', error);
+
+                        if (!initialRequestMade) {
+                            // Initial request failed - this is a real error, not a reconnection scenario
+                            throw error;
+                        }
+
+                        // Polling failed - continue retrying
+                        retryCount++;
+                        showReconnectionStatus(taskList, `Connection lost. Retrying... (attempt ${retryCount})`, true);
+                        retryDelay = Math.min(retryDelay * SSE_RECONNECT_CONFIG.multiplier, SSE_RECONNECT_CONFIG.maxDelay);
+
+                        if (retryCount >= SSE_RECONNECT_CONFIG.maxRetries) {
+                            hideReconnectionStatus(taskList);
+                            throw new Error('Lost connection to deployment. Please refresh the page to check status.');
+                        }
+
+                        await sleep(retryDelay);
+                    }
+                }
+
+                hideReconnectionStatus(taskList);
+            }
+
             try {
                 // Track this as the active deployment for visibility change handling
                 activeDeploymentStep = stepId;
 
-                // Include session ID in URL for logging traceability
-                const sessionParam = state.sessionId ? `&sessionId=${state.sessionId}` : '';
-                const response = await fetch(`/api/playbook/${stepId}?stream=true${sessionParam}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'text/event-stream'
-                    },
-                    body: JSON.stringify({ ...payload, sessionId: state.sessionId })
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-
-                function updateProgress(forceComplete = false) {
-                    // Cap at 99% until we get the actual complete event to avoid false 100%
-                    let pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-                    if (!forceComplete && pct >= 100) {
-                        pct = 99; // Show 99% max until playbook actually completes
-                    }
-                    progressBar.style.width = `${pct}%`;
-                    progressPct.textContent = `${pct}%`;
-                }
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop() || '';
-
-                    for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            try {
-                                const data = JSON.parse(line.substring(6));
-                                handleStreamEvent(stepId, data, taskList, progressBar, progressPct,
-                                    (taskName) => {
-                                        // New task started
-                                        totalTasks++;
-                                        currentTaskName = taskName;
-                                    },
-                                    (taskName) => {
-                                        // Task completed - only count once per unique task
-                                        // (task_result fires for each host, but we want to count the task once)
-                                        if (taskName === currentTaskName) {
-                                            completedTasks++;
-                                            currentTaskName = ''; // Clear so we don't double-count
-                                            updateProgress();
-                                        }
-                                    },
-                                    failedHosts,
-                                    hostNameMap,
-                                    taskResults,
-                                    totalServers);
-                            } catch (e) {
-                                console.error('Error parsing SSE:', e);
-                            }
-                        }
-                    }
-                }
+                // Start streaming with reconnection support
+                await streamWithReconnect();
 
             } catch (error) {
                 // Clear the active deployment tracking on error

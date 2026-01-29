@@ -162,6 +162,46 @@ async function getDeploymentStatus(req, res) {
 }
 
 /**
+ * Get deployment events since a specific timestamp (for SSE reconnection)
+ * @param {object} req - Express request
+ * @param {object} res - Express response
+ */
+async function getEventsSince(req, res) {
+  const { sessionId, stepId } = req.params;
+  const { since } = req.query;
+
+  if (!sessionId || !stepId) {
+    return res.status(400).json({ error: 'sessionId and stepId are required' });
+  }
+
+  const deployment = db.getActiveDeployment(sessionId, stepId);
+
+  if (!deployment) {
+    return res.status(404).json({ error: 'No active deployment found' });
+  }
+
+  let events = deployment.taskEvents || [];
+
+  // If 'since' timestamp provided, filter events after that time
+  if (since) {
+    const sinceTime = new Date(since).getTime();
+    events = events.filter(e => {
+      const eventTime = e.timestamp ? new Date(e.timestamp).getTime() : 0;
+      return eventTime > sinceTime;
+    });
+  }
+
+  res.json({
+    success: true,
+    status: deployment.status,
+    currentTask: deployment.currentTask,
+    errorMessage: deployment.errorMessage,
+    events: events,
+    isComplete: deployment.status === 'completed' || deployment.status === 'failed'
+  });
+}
+
+/**
  * Get all active deployments for a session
  * @param {object} req - Express request
  * @param {object} res - Express response
@@ -215,5 +255,6 @@ module.exports = {
 
   // Status endpoints
   getDeploymentStatus,
-  getActiveDeployments
+  getActiveDeployments,
+  getEventsSince
 };

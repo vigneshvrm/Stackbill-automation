@@ -145,4 +145,14 @@ router.get('/active/:sessionId',
   asyncHandler(playbook.getActiveDeployments)
 );
 
+/**
+ * @route   GET /api/playbook/events/:sessionId/:stepId
+ * @desc    Get deployment events since a timestamp (for SSE reconnection)
+ * @access  Public
+ * @query   since - ISO timestamp to get events after
+ */
+router.get('/events/:sessionId/:stepId',
+  asyncHandler(playbook.getEventsSince)
+);
+
 module.exports = router;
