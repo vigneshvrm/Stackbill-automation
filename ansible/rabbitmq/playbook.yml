@@ -47,13 +47,52 @@
     #####################################################################
     # 🧾 Credentials Handling
     #####################################################################
+    # Priority 1: Use credentials passed from frontend (for re-runs after server reboot)
+    - name: Check if credentials were passed from frontend
+      set_fact:
+        credentials_from_frontend: >-
+          {{
+            (existing_username is defined) and
+            (existing_password is defined) and
+            (existing_username | length > 0) and
+            (existing_password | length > 0)
+          }}
+
+    - name: Use credentials passed from frontend
+      when: credentials_from_frontend | bool
+      block:
+        - name: Set RabbitMQ credentials from frontend
+          set_fact:
+            rabbitmq_username: "{{ existing_username }}"
+            rabbitmq_password: "{{ existing_password }}"
+            skip_credential_generation: true
+
+        - name: Save frontend credentials to file for consistency
+          copy:
+            dest: "{{ creds_file }}"
+            content: |
+              RABBITMQ_USER={{ rabbitmq_username }}
+              RABBITMQ_PASS={{ rabbitmq_password }}
+            owner: root
+            group: root
+            mode: '0600'
+
+        - name: Log using frontend credentials
+          debug:
+            msg: "Using credentials passed from frontend (re-run mode)"
+      tags: ['rabbitmq', 'creds']
+
+    # Priority 2: Check local file if no frontend credentials
     - name: Check if credentials file already exists
       stat:
         path: "{{ creds_file }}"
       register: creds_file_stat
+      when: not (skip_credential_generation | default(false))
 
     - name: Generate new credentials if not existing
-      when: not creds_file_stat.stat.exists
+      when:
+        - not (skip_credential_generation | default(false))
+        - not (creds_file_stat.stat.exists | default(false))
       block:
         - name: Generate random username
           set_fact:
@@ -73,13 +112,17 @@
       tags: ['rabbitmq', 'creds']
 
     - name: Load existing credentials if file is present
-      when: creds_file_stat.stat.exists
+      when:
+        - not (skip_credential_generation | default(false))
+        - creds_file_stat.stat.exists | default(false)
       shell: cat {{ creds_file }}
       register: creds_content
       changed_when: false
 
     - name: Parse credentials from file
-      when: creds_file_stat.stat.exists
+      when:
+        - not (skip_credential_generation | default(false))
+        - creds_file_stat.stat.exists | default(false)
       set_fact:
         rabbitmq_username: "{{ (creds_content.stdout_lines[0].split('=')[1]) | regex_replace('[^A-Za-z0-9]', '') }}"
         rabbitmq_password: "{{ (creds_content.stdout_lines[1].split('=')[1]) | regex_replace('[^A-Za-z0-9]', '') }}"

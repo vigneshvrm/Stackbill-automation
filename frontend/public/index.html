@@ -3334,6 +3334,20 @@
                 return false;
             }
 
+            // StackBill step requires all database credentials to be present
+            if (step.id === 'stackbill') {
+                const mysqlCreds = state.credentials?.mysql;
+                const mongoCreds = state.credentials?.mongodb;
+                const rabbitCreds = state.credentials?.rabbitmq;
+
+                // Check if any required credentials are missing
+                if (!mysqlCreds?.password || !mongoCreds?.password || !rabbitCreds?.password) {
+                    console.log('StackBill requires credentials - MySQL:', !!mysqlCreds?.password,
+                                'MongoDB:', !!mongoCreds?.password, 'RabbitMQ:', !!rabbitCreds?.password);
+                    return true; // Requires manual intervention - missing credentials
+                }
+            }
+
             return false;
         }
 
@@ -3601,6 +3615,27 @@
                 if (state.loadBalancerConfig?.customHostname) {
                     payload.variables.custom_hostname = state.loadBalancerConfig.customHostname;
                 }
+            }
+
+            // Pass existing credentials to playbooks for re-run idempotency
+            // This ensures that if a step is re-run after server reboot (when /tmp files are lost),
+            // the same credentials are used instead of generating new ones
+            if (stepId === 'mysql' && state.credentials?.mysql?.password) {
+                payload.variables.existing_username = state.credentials.mysql.username;
+                payload.variables.existing_password = state.credentials.mysql.password;
+                console.log('Passing existing MySQL credentials for re-run');
+            }
+
+            if (stepId === 'mongodb' && state.credentials?.mongodb?.password) {
+                payload.variables.existing_username = state.credentials.mongodb.username;
+                payload.variables.existing_password = state.credentials.mongodb.password;
+                console.log('Passing existing MongoDB credentials for re-run');
+            }
+
+            if (stepId === 'rabbitmq' && state.credentials?.rabbitmq?.password) {
+                payload.variables.existing_username = state.credentials.rabbitmq.username;
+                payload.variables.existing_password = state.credentials.rabbitmq.password;
+                console.log('Passing existing RabbitMQ credentials for re-run');
             }
 
             // Add StackBill deployment config - pass all database credentials and server IPs
