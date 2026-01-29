@@ -68,6 +68,19 @@ async function executePlaybookStream(req, res, playbookType) {
       // Mark deployment as completed
       if (sessionId) {
         db.completeActiveDeployment(sessionId, playbookType, true);
+
+        // Also mark the step as completed in the database
+        // This ensures the step shows as completed even if frontend SSE was disconnected
+        db.completeStep(sessionId, playbookType, {}, 'completed');
+
+        // Save any credentials that were generated
+        if (result.credentials && Object.keys(result.credentials).length > 0) {
+          for (const [service, creds] of Object.entries(result.credentials)) {
+            if (creds && typeof creds === 'object') {
+              db.saveCredentials(sessionId, service, creds);
+            }
+          }
+        }
       }
 
       await cleanupInventory(inventoryId, servers);

@@ -380,6 +380,29 @@ function getSession(sessionId) {
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
   if (!session) return null;
 
+  // Sync any completed deployments that aren't in completed_steps yet
+  // This handles cases where playbook completed but frontend SSE was disconnected
+  const completedDeployments = db.prepare(`
+    SELECT step_id FROM active_deployments
+    WHERE session_id = ? AND status = 'completed'
+  `).all(sessionId);
+
+  const existingSteps = db.prepare(
+    'SELECT step_id FROM completed_steps WHERE session_id = ?'
+  ).all(sessionId).map(s => s.step_id);
+
+  const syncStmt = db.prepare(`
+    INSERT OR IGNORE INTO completed_steps (session_id, step_id, completed_at, status)
+    VALUES (?, ?, datetime('now'), 'completed')
+  `);
+
+  for (const dep of completedDeployments) {
+    if (!existingSteps.includes(dep.step_id)) {
+      console.log(`Auto-syncing completed deployment: ${dep.step_id} for session ${sessionId}`);
+      syncStmt.run(sessionId, dep.step_id);
+    }
+  }
+
   // Get completed steps (including status and task results for persistence)
   const completedSteps = db.prepare(
     'SELECT step_id, completed_at, step_data, status, task_results FROM completed_steps WHERE session_id = ?'
