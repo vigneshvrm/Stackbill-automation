@@ -2208,7 +2208,7 @@
             return true;
         }
 
-        function openStep(stepId, index) {
+        async function openStep(stepId, index) {
             if (!canAccessStep(index)) {
                 alert('Please complete the previous steps first.');
                 return;
@@ -2242,6 +2242,36 @@
 
             renderProgressSteps();
             renderStepCards();
+
+            // Check if there's an active deployment for this step and reconnect
+            if (state.sessionId) {
+                try {
+                    const response = await fetch(`/api/playbook/status/${state.sessionId}/${stepId}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success && data.deployment && data.deployment.status === 'running') {
+                            console.log('Found running deployment for step:', stepId);
+                            // Show progress UI
+                            const progressSection = document.querySelector(`#form-${stepId} .progress-section`);
+                            const submitBtn = document.getElementById(`submit-${stepId}`);
+                            if (progressSection) {
+                                progressSection.classList.add('visible');
+                            }
+                            if (submitBtn) {
+                                submitBtn.disabled = true;
+                                submitBtn.innerHTML = `<div class="spinner"></div> Deploying...`;
+                            }
+                            // Recover deployment state and track it
+                            activeDeploymentStep = stepId;
+                            await recoverDeploymentState(stepId);
+                            // Start polling for updates
+                            startDeploymentPolling(stepId);
+                        }
+                    }
+                } catch (e) {
+                    console.error('Failed to check deployment status:', e);
+                }
+            }
 
             // Scroll to panel
             document.getElementById('activePanel').scrollIntoView({ behavior: 'smooth' });
@@ -3750,9 +3780,8 @@
                 payload.variables.stackbill_domain = state.sslConfig?.domain || 'stackbill.local';
             }
 
-            let completedTasks = 0;
             let totalTasks = 0;
-            let currentTaskName = '';
+            const completedTaskNames = new Set(); // Track tasks that have completed (received at least one result)
             const failedHosts = new Set(); // Track which hosts have failed
             const totalServers = servers.length;
 
@@ -3774,6 +3803,7 @@
 
             function updateProgress(forceComplete = false) {
                 // Cap at 99% until we get the actual complete event to avoid false 100%
+                const completedTasks = completedTaskNames.size;
                 let pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
                 if (!forceComplete && pct >= 100) {
                     pct = 99; // Show 99% max until playbook actually completes
@@ -3798,13 +3828,13 @@
                     (taskName) => {
                         // New task started
                         totalTasks++;
-                        currentTaskName = taskName;
                     },
                     (taskName) => {
-                        // Task completed - only count once per unique task
-                        if (taskName === currentTaskName) {
-                            completedTasks++;
-                            currentTaskName = '';
+                        // Task received a result - mark as having progress
+                        // Using Set ensures each task is only counted once regardless of host count
+                        const wasNew = !completedTaskNames.has(taskName);
+                        completedTaskNames.add(taskName);
+                        if (wasNew) {
                             updateProgress();
                         }
                     },
@@ -4861,12 +4891,14 @@ Note: Server passwords are stored encrypted and will be available when you resum
                 }
 
                 // Second pass: replay events
-                let completedTasks = 0;
                 let totalTasks = 0;
+                const completedTaskNames = new Set(); // Track tasks that have at least one result
+                const taskOrder = []; // Track task order for completion counting
 
                 events.forEach(event => {
                     if (event.type === 'task') {
                         totalTasks++;
+                        taskOrder.push(event.task);
                         addTaskItem(taskList, event.task, totalServers);
                         if (!taskResults.has(event.task)) {
                             taskResults.set(event.task, {
@@ -4896,9 +4928,10 @@ Note: Server passwords are stored encrypted and will be available when you resum
                         } else if (event.status === 'skipping') {
                             taskData.skipped.add(event.host);
                         }
+                        // Mark task as having results (for progress calculation)
+                        completedTaskNames.add(event.task);
                         updateTaskItem(taskList, event.task, taskData, totalServers);
                     } else if (event.type === 'complete') {
-                        completedTasks = totalTasks;
                         // Handle completion
                         if (event.success) {
                             showResult(stepId, 'success', 'Deployment completed successfully!');
@@ -4907,6 +4940,9 @@ Note: Server passwords are stored encrypted and will be available when you resum
                         }
                     }
                 });
+
+                // Calculate completed tasks: count tasks that have received at least one result
+                const completedTasks = completedTaskNames.size;
 
                 // Update progress
                 if (progressBar && progressPct) {
@@ -4952,9 +4988,89 @@ Note: Server passwords are stored encrypted and will be available when you resum
                 // If deployment completed, clear active step
                 if (data.deployment.status !== 'running') {
                     activeDeploymentStep = null;
+                    stopDeploymentPolling();
                 }
             } catch (e) {
                 console.error('Failed to poll deployment status:', e);
+            }
+        }
+
+        // Polling interval reference
+        let deploymentPollingInterval = null;
+
+        /**
+         * Start continuous polling for deployment updates
+         */
+        function startDeploymentPolling(stepId) {
+            // Clear any existing polling
+            stopDeploymentPolling();
+
+            console.log('Starting deployment polling for:', stepId);
+
+            // Poll every 2 seconds
+            deploymentPollingInterval = setInterval(async () => {
+                if (!activeDeploymentStep || activeDeploymentStep !== stepId) {
+                    stopDeploymentPolling();
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`/api/playbook/status/${state.sessionId}/${stepId}`);
+                    if (!response.ok) return;
+
+                    const data = await response.json();
+                    if (!data.success || !data.deployment) return;
+
+                    // Update UI with latest state
+                    await recoverDeploymentState(stepId);
+
+                    // Check if deployment finished
+                    if (data.deployment.status !== 'running') {
+                        console.log('Deployment finished:', data.deployment.status);
+                        activeDeploymentStep = null;
+                        stopDeploymentPolling();
+
+                        // Update UI for completion
+                        const step = DEPLOYMENT_STEPS.find(s => s.id === stepId);
+                        const submitBtn = document.getElementById(`submit-${stepId}`);
+                        const progressBar = document.querySelector(`#form-${stepId} .progress-fill`);
+                        const progressPct = document.querySelector(`#form-${stepId} .progress-pct`);
+
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = `<span>&#128640;</span> Deploy ${step ? step.title : stepId}`;
+                        }
+                        if (progressBar) progressBar.style.width = '100%';
+                        if (progressPct) progressPct.textContent = '100%';
+
+                        // If completed successfully, update state
+                        if (data.deployment.status === 'completed') {
+                            state.completedSteps.add(stepId);
+                            saveState();
+                            renderProgressSteps();
+                            renderStepCards();
+                            renderSummary();
+
+                            // Handle auto-complete mode
+                            if (state.automationMode === 'auto') {
+                                setTimeout(() => autoCompleteNextStep(stepId), 2000);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('Polling error:', e);
+                }
+            }, 2000);
+        }
+
+        /**
+         * Stop deployment polling
+         */
+        function stopDeploymentPolling() {
+            if (deploymentPollingInterval) {
+                clearInterval(deploymentPollingInterval);
+                deploymentPollingInterval = null;
+                console.log('Stopped deployment polling');
             }
         }
 
