@@ -1,0 +1,168 @@
+{
+  "$schema": "./steps-config.schema.json",
+  "version": "2.0",
+  "description": "StackBill Deployment Steps Configuration - Configurable step order, dependencies, and parallel execution",
+
+  "settings": {
+    "allowReorder": true,
+    "allowSkipOptional": true,
+    "enforceDepencencies": true,
+    "defaultParallelExecution": true
+  },
+
+  "steps": [
+    {
+      "id": "env-check",
+      "title": "Environment",
+      "fullTitle": "Environment Preparation",
+      "description": "Verify network, firewall, and connectivity",
+      "icon": "&#127760;",
+      "type": "check",
+      "required": true,
+      "order": 1,
+      "dependencies": []
+    },
+    {
+      "id": "kubernetes",
+      "title": "Kubernetes",
+      "fullTitle": "Kubernetes Cluster",
+      "description": "Setup master and worker nodes",
+      "icon": "&#9784;",
+      "type": "deployment",
+      "required": true,
+      "order": 2,
+      "dependencies": ["env-check"]
+    },
+    {
+      "id": "rabbitmq",
+      "title": "RabbitMQ",
+      "fullTitle": "RabbitMQ Message Broker",
+      "description": "Install RabbitMQ server",
+      "icon": "&#128007;",
+      "type": "deployment",
+      "required": true,
+      "order": 3,
+      "dependencies": ["env-check"],
+      "parallelGroup": "databases",
+      "canRunParallel": true
+    },
+    {
+      "id": "mongodb",
+      "title": "MongoDB",
+      "fullTitle": "MongoDB Database",
+      "description": "Setup MongoDB replica set",
+      "icon": "&#127811;",
+      "type": "deployment",
+      "required": true,
+      "order": 4,
+      "dependencies": ["env-check"],
+      "parallelGroup": "databases",
+      "canRunParallel": true,
+      "hasMode": true,
+      "modes": ["single", "cluster"]
+    },
+    {
+      "id": "mysql",
+      "title": "MySQL",
+      "fullTitle": "MySQL Database",
+      "description": "Install MySQL with replication",
+      "icon": "&#128024;",
+      "type": "deployment",
+      "required": true,
+      "order": 5,
+      "dependencies": ["env-check"],
+      "parallelGroup": "databases",
+      "canRunParallel": true,
+      "hasMode": true,
+      "modes": ["single", "cluster"]
+    },
+    {
+      "id": "nfs",
+      "title": "NFS",
+      "fullTitle": "NFS Storage Server",
+      "description": "Setup NFS for shared storage",
+      "icon": "&#128193;",
+      "type": "deployment",
+      "required": true,
+      "order": 6,
+      "dependencies": ["env-check"],
+      "extraFields": ["disk_device", "client_ip_range"]
+    },
+    {
+      "id": "loadbalancer",
+      "title": "Load Balancer",
+      "fullTitle": "Load Balancer Setup",
+      "description": "Install and configure HAProxy/Nginx with SSL",
+      "icon": "&#9878;",
+      "type": "deployment",
+      "required": true,
+      "order": 7,
+      "dependencies": ["kubernetes"],
+      "hasSSLConfig": true,
+      "hasLoadBalancerConfig": true
+    },
+    {
+      "id": "kubectl",
+      "title": "Kubectl & Istio",
+      "fullTitle": "Kubectl & Istio Setup",
+      "description": "Install Kubernetes CLI and service mesh",
+      "icon": "&#9881;",
+      "type": "deployment",
+      "required": true,
+      "order": 8,
+      "dependencies": ["kubernetes"],
+      "kubernetesGroup": true,
+      "canRunParallel": true
+    },
+    {
+      "id": "helm",
+      "title": "Helm",
+      "fullTitle": "Helm Package Manager",
+      "description": "Install Helm for K8s deployments",
+      "icon": "&#9875;",
+      "type": "deployment",
+      "required": true,
+      "order": 9,
+      "dependencies": ["kubernetes"],
+      "kubernetesGroup": true,
+      "canRunParallel": true
+    },
+    {
+      "id": "stackbill",
+      "title": "StackBill",
+      "fullTitle": "StackBill Application",
+      "description": "Deploy StackBill application",
+      "icon": "&#127919;",
+      "type": "deployment",
+      "required": true,
+      "order": 10,
+      "dependencies": ["kubernetes", "mysql", "mongodb", "rabbitmq", "nfs", "loadbalancer", "kubectl", "helm"]
+    }
+  ],
+
+  "parallelGroups": {
+    "databases": {
+      "steps": ["mysql", "mongodb", "rabbitmq"],
+      "description": "These databases can be installed simultaneously",
+      "maxConcurrent": 3
+    },
+    "kubernetes-tools": {
+      "steps": ["kubectl", "helm"],
+      "description": "Kubernetes tools that can be installed in parallel",
+      "maxConcurrent": 2
+    }
+  },
+
+  "executionProfiles": {
+    "sequential": {
+      "name": "Sequential (Safe)",
+      "description": "Run all steps one at a time",
+      "parallelExecution": false
+    },
+    "parallel": {
+      "name": "Parallel (Fast)",
+      "description": "Run independent steps in parallel where possible",
+      "parallelExecution": true
+    }
+  }
+}

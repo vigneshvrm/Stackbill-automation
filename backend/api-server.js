@@ -771,6 +771,79 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Ansible API Server is running' });
 });
 
+// Step configuration endpoint - serves configurable step definitions
+const stepsConfigPath = path.join(__dirname, 'config', 'steps-config.json');
+let stepsConfigCache = null;
+let stepsConfigMtime = null;
+
+app.get('/api/steps/config', (req, res) => {
+  try {
+    // Check if config file has changed (for hot reload during development)
+    const stats = fsSync.statSync(stepsConfigPath);
+    const currentMtime = stats.mtimeMs;
+
+    if (!stepsConfigCache || stepsConfigMtime !== currentMtime) {
+      const configContent = fsSync.readFileSync(stepsConfigPath, 'utf8');
+      stepsConfigCache = JSON.parse(configContent);
+      stepsConfigMtime = currentMtime;
+      logger.info('Steps configuration loaded/reloaded');
+    }
+
+    res.json(stepsConfigCache);
+  } catch (error) {
+    logger.error('Failed to load steps configuration', { error: error.message });
+    res.status(500).json({ error: 'Failed to load step configuration', details: error.message });
+  }
+});
+
+// Get flattened step list (for frontend consumption)
+app.get('/api/steps/flat', (req, res) => {
+  try {
+    const stats = fsSync.statSync(stepsConfigPath);
+    const currentMtime = stats.mtimeMs;
+
+    if (!stepsConfigCache || stepsConfigMtime !== currentMtime) {
+      const configContent = fsSync.readFileSync(stepsConfigPath, 'utf8');
+      stepsConfigCache = JSON.parse(configContent);
+      stepsConfigMtime = currentMtime;
+    }
+
+    // Build step list with all necessary properties for frontend
+    const flatSteps = stepsConfigCache.steps.map((step, index) => ({
+      id: step.id,
+      number: step.order || index + 1,
+      title: step.title,
+      fullTitle: step.fullTitle || step.title,
+      description: step.description,
+      icon: step.icon,
+      type: step.type,
+      // Dependencies for access control
+      dependencies: step.dependencies || [],
+      // Parallel execution support
+      parallelGroup: step.parallelGroup || null,
+      canRunParallel: step.canRunParallel || false,
+      // Step-specific options
+      hasMode: step.hasMode || false,
+      modes: step.modes || null,
+      hasSSLConfig: step.hasSSLConfig || false,
+      hasLoadBalancerConfig: step.hasLoadBalancerConfig || false,
+      extraFields: step.extraFields || null
+    }));
+
+    // Include parallel group definitions for UI
+    const parallelGroups = stepsConfigCache.parallelGroups || {};
+
+    res.json({
+      steps: flatSteps,
+      config: stepsConfigCache.settings,
+      parallelGroups
+    });
+  } catch (error) {
+    logger.error('Failed to get flat steps', { error: error.message });
+    res.status(500).json({ error: 'Failed to get step list', details: error.message });
+  }
+});
+
 // Execute MySQL playbook
 app.post('/api/playbook/mysql', async (req, res) => {
   const playbookPath = path.join(__dirname, '..', 'ansible', 'mysql', 'playbook.yml');
@@ -1118,6 +1191,159 @@ app.post('/api/playbook/stackbill', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// =====================================================
+// PARALLEL PLAYBOOK EXECUTION
+// =====================================================
+
+// Execute multiple playbooks in parallel
+app.post('/api/playbook/parallel', async (req, res) => {
+  const sessionId = extractSessionId(req);
+  const logMeta = sessionId ? { sessionId } : {};
+
+  try {
+    const { playbooks } = req.body;
+    // playbooks: [{ type: 'mysql', servers: [...], variables: {} }, ...]
+
+    if (!playbooks || !Array.isArray(playbooks) || playbooks.length === 0) {
+      return res.status(400).json({ error: 'playbooks array is required' });
+    }
+
+    logger.info(`Starting parallel execution of ${playbooks.length} playbooks`, {
+      ...logMeta,
+      playbooks: playbooks.map(p => p.type)
+    });
+
+    // Set up Server-Sent Events for combined output
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    const sendEvent = (data) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    // Track results from all playbooks
+    const results = {};
+    const errors = {};
+    let completedCount = 0;
+
+    // Send initial status
+    sendEvent({
+      type: 'parallel-start',
+      playbooks: playbooks.map(p => p.type),
+      total: playbooks.length
+    });
+
+    // Execute each playbook
+    const playbookPromises = playbooks.map(async (pb) => {
+      const { type, servers, variables = {} } = pb;
+      const playbookPath = path.join(__dirname, '..', 'ansible', getPlaybookSubPath(type), 'playbook.yml');
+
+      try {
+        // Register active deployment
+        if (sessionId) {
+          db.createActiveDeployment(sessionId, type);
+        }
+
+        sendEvent({
+          type: 'playbook-start',
+          playbook: type,
+          serverCount: servers?.length || 0
+        });
+
+        const { inventoryId, inventoryPath } = await generateInventory(servers, type);
+
+        const result = await executePlaybook(type, inventoryPath, playbookPath, variables, (output) => {
+          // Tag output with playbook type
+          sendEvent({
+            ...output,
+            playbook: type
+          });
+        }, sessionId);
+
+        await cleanupInventory(inventoryId, servers);
+
+        results[type] = result;
+        completedCount++;
+
+        // Mark deployment as completed
+        if (sessionId) {
+          db.completeActiveDeployment(sessionId, type, true);
+          db.completeStep(sessionId, type, {}, 'completed');
+        }
+
+        sendEvent({
+          type: 'playbook-complete',
+          playbook: type,
+          success: true,
+          completed: completedCount,
+          total: playbooks.length
+        });
+
+        return { type, success: true, result };
+      } catch (error) {
+        errors[type] = error.message || error;
+        completedCount++;
+
+        if (sessionId) {
+          db.completeActiveDeployment(sessionId, type, false);
+        }
+
+        sendEvent({
+          type: 'playbook-complete',
+          playbook: type,
+          success: false,
+          error: error.message,
+          completed: completedCount,
+          total: playbooks.length
+        });
+
+        return { type, success: false, error: error.message };
+      }
+    });
+
+    // Wait for all playbooks to complete
+    const allResults = await Promise.all(playbookPromises);
+
+    // Send final summary
+    const successCount = allResults.filter(r => r.success).length;
+    sendEvent({
+      type: 'parallel-complete',
+      success: successCount === playbooks.length,
+      results: allResults,
+      summary: {
+        total: playbooks.length,
+        succeeded: successCount,
+        failed: playbooks.length - successCount
+      }
+    });
+
+    res.end();
+  } catch (error) {
+    logger.error('Parallel execution failed', { ...logMeta, error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Helper to get playbook subpath from type
+function getPlaybookSubPath(type) {
+  const mapping = {
+    'mysql': 'mysql',
+    'mongodb': 'mongodb',
+    'rabbitmq': 'rabbitmq',
+    'nfs': 'nfs',
+    'kubernetes': 'kubernetes',
+    'kubectl': 'kubectl-istio',
+    'helm': 'helm',
+    'loadbalancer': 'loadbalancer',
+    'env-check': 'env-check',
+    'stackbill': 'stackbill',
+    'ssl': 'ssl'
+  };
+  return mapping[type] || type;
+}
 
 // =====================================================
 // DEPLOYMENT STATUS API ENDPOINTS (for reconnection)

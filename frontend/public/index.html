@@ -1204,6 +1204,35 @@
             z-index: 1;
         }
 
+        /* Parallel execution indicator */
+        .parallel-badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            font-size: 0.75rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            z-index: 1;
+            cursor: help;
+        }
+
+        .parallel-badge:hover::after {
+            content: 'Can run in parallel';
+            position: absolute;
+            left: 100%;
+            top: 50%;
+            transform: translateY(-50%);
+            margin-left: 8px;
+            background: #1f2937;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            white-space: nowrap;
+        }
+
         /* Session info badge in header */
         .session-info {
             display: flex;
@@ -1507,107 +1536,214 @@
             { value: 'sudo', label: 'Sudo User', description: 'Escalate to root with sudo' }
         ];
 
-        // Deployment steps ordered according to StackBill documentation:
-        // https://docs.stackbill.com/docs/deployment/getting-started
-        const DEPLOYMENT_STEPS = [
-            {
-                id: 'env-check',
-                number: 1,
-                title: 'Environment',
-                fullTitle: 'Environment Preparation',
-                description: 'Verify network, firewall, and connectivity',
-                icon: '&#127760;',
-                type: 'check'
-            },
-            {
-                id: 'kubernetes',
-                number: 2,
-                title: 'Kubernetes',
-                fullTitle: 'Kubernetes Cluster',
-                description: 'Setup master and worker nodes',
-                icon: '&#9784;',
-                type: 'deployment'
-            },
-            {
-                id: 'rabbitmq',
-                number: 3,
-                title: 'RabbitMQ',
-                fullTitle: 'RabbitMQ Message Broker',
-                description: 'Install RabbitMQ server',
-                icon: '&#128007;',
-                type: 'deployment'
-            },
-            {
-                id: 'mongodb',
-                number: 4,
-                title: 'MongoDB',
-                fullTitle: 'MongoDB Database',
-                description: 'Setup MongoDB replica set',
-                icon: '&#127811;',
-                type: 'deployment',
-                hasMode: true,
-                modes: ['single', 'cluster']
-            },
-            {
-                id: 'mysql',
-                number: 5,
-                title: 'MySQL',
-                fullTitle: 'MySQL Database',
-                description: 'Install MySQL with replication',
-                icon: '&#128024;',
-                type: 'deployment',
-                hasMode: true,
-                modes: ['single', 'cluster']
-            },
-            {
-                id: 'nfs',
-                number: 6,
-                title: 'NFS',
-                fullTitle: 'NFS Storage Server',
-                description: 'Setup NFS for shared storage',
-                icon: '&#128193;',
-                type: 'deployment',
-                extraFields: ['disk_device', 'client_ip_range']
-            },
-            {
-                id: 'loadbalancer',
-                number: 7,
-                title: 'Load Balancer',
-                fullTitle: 'Load Balancer Setup',
-                description: 'Install and configure HAProxy/Nginx with SSL',
-                icon: '&#9878;',
-                type: 'deployment',
-                hasSSLConfig: true,
-                hasLoadBalancerConfig: true
-            },
-            {
-                id: 'kubectl',
-                number: 8,
-                title: 'Kubectl & Istio',
-                fullTitle: 'Kubectl & Istio Setup',
-                description: 'Install Kubernetes CLI and service mesh',
-                icon: '&#9881;',
-                type: 'deployment'
-            },
-            {
-                id: 'helm',
-                number: 9,
-                title: 'Helm',
-                fullTitle: 'Helm Package Manager',
-                description: 'Install Helm for K8s deployments',
-                icon: '&#9875;',
-                type: 'deployment'
-            },
-            {
-                id: 'stackbill',
-                number: 10,
-                title: 'StackBill',
-                fullTitle: 'StackBill Application',
-                description: 'Deploy StackBill application',
-                icon: '&#127919;',
-                type: 'deployment'
-            }
+        // Step configuration - loaded dynamically from backend
+        // Supports: dependency-based access, parallel execution groups
+        let DEPLOYMENT_STEPS = [];
+        let STEP_DEPENDENCIES = {};  // Map of stepId -> [dependencies]
+        let PARALLEL_GROUPS = {};    // Map of groupId -> [stepIds]
+        let STEP_CONFIG = {          // Global step settings
+            allowReorder: false,
+            allowSkipOptional: false,
+            enforceDepencencies: true,
+            defaultParallelExecution: true
+        };
+
+        // Default step configuration (used as fallback if API fails)
+        const DEFAULT_STEPS = [
+            { id: 'env-check', number: 1, title: 'Environment', fullTitle: 'Environment Preparation', description: 'Verify network, firewall, and connectivity', icon: '&#127760;', type: 'check', dependencies: [] },
+            { id: 'kubernetes', number: 2, title: 'Kubernetes', fullTitle: 'Kubernetes Cluster', description: 'Setup master and worker nodes', icon: '&#9784;', type: 'deployment', dependencies: ['env-check'] },
+            { id: 'rabbitmq', number: 3, title: 'RabbitMQ', fullTitle: 'RabbitMQ Message Broker', description: 'Install RabbitMQ server', icon: '&#128007;', type: 'deployment', dependencies: ['env-check'], parallelGroup: 'databases' },
+            { id: 'mongodb', number: 4, title: 'MongoDB', fullTitle: 'MongoDB Database', description: 'Setup MongoDB replica set', icon: '&#127811;', type: 'deployment', hasMode: true, modes: ['single', 'cluster'], dependencies: ['env-check'], parallelGroup: 'databases' },
+            { id: 'mysql', number: 5, title: 'MySQL', fullTitle: 'MySQL Database', description: 'Install MySQL with replication', icon: '&#128024;', type: 'deployment', hasMode: true, modes: ['single', 'cluster'], dependencies: ['env-check'], parallelGroup: 'databases' },
+            { id: 'nfs', number: 6, title: 'NFS', fullTitle: 'NFS Storage Server', description: 'Setup NFS for shared storage', icon: '&#128193;', type: 'deployment', extraFields: ['disk_device', 'client_ip_range'], dependencies: ['env-check'] },
+            { id: 'loadbalancer', number: 7, title: 'Load Balancer', fullTitle: 'Load Balancer Setup', description: 'Install and configure HAProxy/Nginx with SSL', icon: '&#9878;', type: 'deployment', hasSSLConfig: true, hasLoadBalancerConfig: true, dependencies: ['kubernetes'] },
+            { id: 'kubectl', number: 8, title: 'Kubectl & Istio', fullTitle: 'Kubectl & Istio Setup', description: 'Install Kubernetes CLI and service mesh', icon: '&#9881;', type: 'deployment', dependencies: ['kubernetes'] },
+            { id: 'helm', number: 9, title: 'Helm', fullTitle: 'Helm Package Manager', description: 'Install Helm for K8s deployments', icon: '&#9875;', type: 'deployment', dependencies: ['kubernetes'] },
+            { id: 'stackbill', number: 10, title: 'StackBill', fullTitle: 'StackBill Application', description: 'Deploy StackBill application', icon: '&#127919;', type: 'deployment', dependencies: ['kubernetes', 'mysql', 'mongodb', 'rabbitmq', 'nfs', 'loadbalancer', 'kubectl', 'helm'] }
         ];
+
+        // Load step configuration from backend API
+        async function loadStepConfiguration() {
+            try {
+                const response = await fetch('/api/steps/flat');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.steps && data.steps.length > 0) {
+                        DEPLOYMENT_STEPS = data.steps;
+                        if (data.config) {
+                            STEP_CONFIG = { ...STEP_CONFIG, ...data.config };
+                        }
+                        // Load parallel groups from API
+                        if (data.parallelGroups) {
+                            for (const [groupId, groupConfig] of Object.entries(data.parallelGroups)) {
+                                PARALLEL_GROUPS[groupId] = groupConfig.steps || [];
+                            }
+                        }
+                        console.log('Loaded step configuration from API:', DEPLOYMENT_STEPS.length, 'steps');
+                        console.log('Parallel groups:', PARALLEL_GROUPS);
+                        buildDependencyMap();
+                        return true;
+                    }
+                }
+            } catch (error) {
+                console.warn('Failed to load step config from API, using defaults:', error);
+            }
+
+            // Fallback to default steps
+            DEPLOYMENT_STEPS = [...DEFAULT_STEPS];
+            buildDependencyMap();
+            return false;
+        }
+
+        // Build dependency map from step configuration
+        function buildDependencyMap() {
+            STEP_DEPENDENCIES = {};
+
+            for (const step of DEPLOYMENT_STEPS) {
+                STEP_DEPENDENCIES[step.id] = step.dependencies || [];
+
+                // Also build parallel groups from step.parallelGroup if not already loaded from API
+                if (step.parallelGroup) {
+                    if (!PARALLEL_GROUPS[step.parallelGroup]) {
+                        PARALLEL_GROUPS[step.parallelGroup] = [];
+                    }
+                    if (!PARALLEL_GROUPS[step.parallelGroup].includes(step.id)) {
+                        PARALLEL_GROUPS[step.parallelGroup].push(step.id);
+                    }
+                }
+            }
+
+            console.log('Step dependencies:', STEP_DEPENDENCIES);
+            console.log('Parallel groups:', PARALLEL_GROUPS);
+        }
+
+        // Check if all dependencies for a step are satisfied
+        function areDependenciesSatisfied(stepId) {
+            const dependencies = STEP_DEPENDENCIES[stepId] || [];
+            for (const dep of dependencies) {
+                if (!state.completedSteps.has(dep)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // Get steps that can run in parallel with this step
+        function getParallelSteps(stepId) {
+            const step = DEPLOYMENT_STEPS.find(s => s.id === stepId);
+            if (!step || !step.parallelGroup) return [];
+
+            return PARALLEL_GROUPS[step.parallelGroup]?.filter(id => id !== stepId) || [];
+        }
+
+        // Get execution order information for a step - shows how servers are configured in sequence
+        function getExecutionOrderInfo(stepId) {
+            const mode = state.modes[stepId] || 'single';
+            const servers = state.servers[stepId] || [];
+
+            const orderInfo = {
+                'mysql': {
+                    single: {
+                        steps: [{ label: 'MySQL Server', role: 'mysql' }],
+                        description: 'Single MySQL server will be configured with full privileges.'
+                    },
+                    cluster: {
+                        steps: [
+                            { label: 'Primary', role: 'mysql-primary' },
+                            { label: 'Secondary', role: 'mysql-secondary' }
+                        ],
+                        description: 'Primary is configured first with replication user, then Secondary connects using replication credentials.'
+                    }
+                },
+                'mongodb': {
+                    single: {
+                        steps: [{ label: 'MongoDB Server', role: 'mongodb' }],
+                        description: 'Single MongoDB server will be configured as standalone.'
+                    },
+                    cluster: {
+                        steps: [
+                            { label: 'Primary', role: 'mongodb-primary' },
+                            { label: 'Replicas', role: 'mongodb-replica' }
+                        ],
+                        description: 'Primary initializes the replica set, then Replicas join using the primary\'s configuration.'
+                    }
+                },
+                'kubernetes': {
+                    single: {
+                        steps: [
+                            { label: 'Master', role: 'k8s-master' },
+                            { label: 'Workers', role: 'k8s-worker' }
+                        ],
+                        description: 'Master initializes the cluster and generates join token, then Workers join using that token.'
+                    },
+                    cluster: {
+                        steps: [
+                            { label: 'Masters', role: 'k8s-master' },
+                            { label: 'Workers', role: 'k8s-worker' }
+                        ],
+                        description: 'First Master initializes the cluster, additional Masters join control plane, then Workers join.'
+                    }
+                },
+                'rabbitmq': {
+                    single: {
+                        steps: [{ label: 'RabbitMQ Server', role: 'rabbitmq' }],
+                        description: 'Single RabbitMQ server will be configured with management plugin.'
+                    },
+                    cluster: {
+                        steps: [
+                            { label: 'Primary Node', role: 'rabbitmq' },
+                            { label: 'Cluster Nodes', role: 'rabbitmq' }
+                        ],
+                        description: 'Primary node starts first with cluster cookie, then other nodes join the cluster.'
+                    }
+                },
+                'loadbalancer': {
+                    single: {
+                        steps: [{ label: 'Load Balancer', role: 'loadbalancer' }],
+                        description: 'HAProxy/Nginx will be configured with backend server definitions.'
+                    }
+                },
+                'nfs': {
+                    single: {
+                        steps: [{ label: 'NFS Server', role: 'nfs' }],
+                        description: 'NFS server will be configured with exports for Kubernetes persistent volumes.'
+                    }
+                },
+                'kubectl': {
+                    single: {
+                        steps: [{ label: 'Management Node', role: 'kubectl' }],
+                        description: 'Kubectl and Istio CLI will be installed. Requires kubeconfig from K8s master.'
+                    }
+                },
+                'helm': {
+                    single: {
+                        steps: [{ label: 'Management Node', role: 'helm' }],
+                        description: 'Helm package manager will be installed. Requires kubeconfig from K8s master.'
+                    }
+                },
+                'stackbill': {
+                    single: {
+                        steps: [{ label: 'StackBill Deployment', role: 'stackbill' }],
+                        description: 'StackBill application will be deployed to the Kubernetes cluster.'
+                    }
+                }
+            };
+
+            const stepInfo = orderInfo[stepId];
+            if (!stepInfo) return null;
+
+            // Return cluster info if in cluster mode and has cluster config, otherwise single
+            if (mode === 'cluster' && stepInfo.cluster) {
+                return stepInfo.cluster;
+            }
+
+            // For kubernetes, always show master → worker order if multiple servers
+            if (stepId === 'kubernetes' && servers.length > 1) {
+                return stepInfo.cluster || stepInfo.single;
+            }
+
+            return stepInfo.single;
+        }
 
         // ==================== STATE ====================
         const state = {
@@ -1959,9 +2095,12 @@
         // ==================== INITIALIZATION ====================
         async function init() {
             // Show loading state
-            document.getElementById('stepsGrid').innerHTML = '<div style="text-align: center; padding: 40px; color: var(--color-text-muted);">Loading session...</div>';
+            document.getElementById('stepsGrid').innerHTML = '<div style="text-align: center; padding: 40px; color: var(--color-text-muted);">Loading configuration...</div>';
 
-            // Load global settings first
+            // Load step configuration from API (supports configurable steps, parallel execution)
+            await loadStepConfiguration();
+
+            // Load global settings
             await loadGlobalSettings();
 
             await loadState();
@@ -2020,9 +2159,11 @@
                 const isCompleted = state.completedSteps.has(step.id);
                 const isActive = state.activePanel === step.id;
                 const isLocked = !isCompleted && !canAccessStep(index);
+                const canRunParallel = step.parallelGroup || step.canRunParallel;
+                const parallelSteps = getParallelSteps(step.id);
 
                 let statusClass = 'pending';
-                let statusText = 'Pending';
+                let statusText = 'Ready';  // Changed from "Pending" - steps are ready if unlocked
                 let statusIcon = '&#9711;';
 
                 if (isCompleted) {
@@ -2035,8 +2176,21 @@
                     statusIcon = '&#9654;';
                 } else if (isLocked) {
                     statusClass = 'locked';
-                    statusText = 'Locked';
+                    // Show what's blocking this step
+                    const missing = getMissingDependencies(step.id);
+                    if (missing.length === 1) {
+                        const depStep = DEPLOYMENT_STEPS.find(s => s.id === missing[0]);
+                        statusText = `After ${depStep?.title || missing[0]}`;
+                    } else {
+                        statusText = 'Locked';
+                    }
                     statusIcon = '&#128274;';
+                }
+
+                // Show parallel indicator for steps that can run together
+                let parallelBadge = '';
+                if (canRunParallel && !isCompleted && !isLocked) {
+                    parallelBadge = `<span class="parallel-badge" title="Can run in parallel with: ${parallelSteps.map(id => DEPLOYMENT_STEPS.find(s => s.id === id)?.title || id).join(', ')}">&#8644;</span>`;
                 }
 
                 const cardClass = `step-card ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''} ${isLocked ? 'locked' : ''}`;
@@ -2044,6 +2198,7 @@
                 return `
                     <div class="${cardClass}" onclick="openStep('${step.id}', ${index})" data-step="${step.id}">
                         ${isLocked ? '<span class="lock-icon">&#128274;</span>' : ''}
+                        ${parallelBadge}
                         <div class="step-card-header">
                             <div class="step-icon">${step.icon}</div>
                             <span class="step-number">Step ${step.number}</span>
@@ -2198,19 +2353,31 @@
 
         // ==================== STEP MANAGEMENT ====================
         function canAccessStep(index) {
-            if (index === 0) return true;
-            // Check if all previous steps are completed
-            for (let i = 0; i < index; i++) {
-                if (!state.completedSteps.has(DEPLOYMENT_STEPS[i].id)) {
-                    return false;
-                }
-            }
-            return true;
+            const step = DEPLOYMENT_STEPS[index];
+            if (!step) return false;
+
+            // First step is always accessible
+            if (index === 0 || step.dependencies?.length === 0) return true;
+
+            // Use dependency-based access control
+            // Check if all dependencies are satisfied
+            return areDependenciesSatisfied(step.id);
+        }
+
+        // Get missing dependencies for a step (for UI feedback)
+        function getMissingDependencies(stepId) {
+            const dependencies = STEP_DEPENDENCIES[stepId] || [];
+            return dependencies.filter(dep => !state.completedSteps.has(dep));
         }
 
         async function openStep(stepId, index) {
             if (!canAccessStep(index)) {
-                alert('Please complete the previous steps first.');
+                const missing = getMissingDependencies(stepId);
+                const missingNames = missing.map(id => {
+                    const step = DEPLOYMENT_STEPS.find(s => s.id === id);
+                    return step?.title || id;
+                });
+                alert(`Please complete these steps first: ${missingNames.join(', ')}`);
                 return;
             }
 
@@ -2286,6 +2453,28 @@
 
         function generateStepForm(step) {
             let formHtml = '';
+
+            // Execution Order Info - shows how servers will be configured in sequence
+            const executionOrderInfo = getExecutionOrderInfo(step.id);
+            if (executionOrderInfo && step.id !== 'env-check') {
+                formHtml += `
+                    <div class="form-section execution-order-info" style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.08), rgba(118, 75, 162, 0.08)); padding: 16px; border-radius: 10px; border: 1px solid rgba(102, 126, 234, 0.2);">
+                        <div class="form-section-title" style="color: var(--primary);">&#9889; Execution Order</div>
+                        <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px; flex-wrap: wrap;">
+                            ${executionOrderInfo.steps.map((s, i) => `
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="background: var(--primary); color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 600;">${i + 1}</span>
+                                    <span style="font-weight: 500; color: var(--color-text-primary);">${s.label}</span>
+                                    ${i < executionOrderInfo.steps.length - 1 ? '<span style="color: var(--primary); font-size: 1.2rem;">→</span>' : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                        <p style="color: var(--color-text-muted); font-size: 0.8rem; margin: 8px 0 0 0;">
+                            ${executionOrderInfo.description}
+                        </p>
+                    </div>
+                `;
+            }
 
             // Mode display for MySQL and MongoDB (auto-detected from env-check)
             if (step.hasMode) {
@@ -2778,6 +2967,57 @@
             }
         }
 
+        // Determine execution order for a server within a step
+        function getServerExecutionOrder(stepId, role, index, allServers) {
+            // Primary roles that execute first
+            const primaryRoles = [
+                'mysql-primary', 'mongodb-primary', 'k8s-master',
+                'rabbitmq', 'nfs', 'loadbalancer', 'kubectl', 'helm', 'stackbill',
+                'mysql', 'mongodb'  // Single mode
+            ];
+
+            // Check if this is a primary role
+            const isPrimary = primaryRoles.includes(role) ||
+                             (index === 0 && ['mysql', 'mongodb', 'rabbitmq', 'kubernetes'].includes(stepId));
+
+            // Calculate order based on role groups
+            let order = index + 1;
+
+            // For steps with clear primary/secondary separation
+            if (stepId === 'mysql' || stepId === 'mongodb') {
+                const primaries = allServers.filter(s =>
+                    s.role?.includes('primary') || s.role === stepId
+                );
+                const isPrimaryServer = role?.includes('primary') || (index === 0 && !role?.includes('secondary'));
+
+                if (isPrimaryServer) {
+                    order = primaries.findIndex(s => s === allServers[index]) + 1;
+                    if (order === 0) order = 1;
+                } else {
+                    order = primaries.length + allServers.filter((s, i) =>
+                        i < index && (s.role?.includes('secondary') || s.role?.includes('replica'))
+                    ).length + 1;
+                }
+            }
+
+            // For kubernetes: masters first, then workers
+            if (stepId === 'kubernetes') {
+                const masters = allServers.filter(s => s.role === 'k8s-master');
+                const isMaster = role === 'k8s-master';
+
+                if (isMaster) {
+                    order = masters.findIndex(s => s === allServers[index]) + 1;
+                    if (order === 0) order = 1;
+                } else {
+                    order = masters.length + allServers.filter((s, i) =>
+                        i < index && s.role === 'k8s-worker'
+                    ).length + 1;
+                }
+            }
+
+            return { order, isPrimary };
+        }
+
         function renderServers(stepId) {
             const container = document.getElementById(`servers-${stepId}`);
             if (!container) return;
@@ -2799,13 +3039,21 @@
                 const authTypeLabel = server.ssh_auth_type === 'key' ? 'SSH Key' : 'Password';
                 const userTypeLabel = server.ssh_user_type === 'sudo' ? `Sudo (${server.ssh_user || 'user'})` : 'Root';
 
+                // Determine execution order for this server based on role
+                const execOrder = getServerExecutionOrder(stepId, server.role, index, servers);
+
                 // READ-ONLY card for deployment steps
                 if (isReadOnly) {
+                    // Style for primary/first servers vs secondary/followers
+                    const isPrimary = execOrder.isPrimary;
+                    const cardBorder = isPrimary ? 'border-left: 3px solid var(--primary);' : '';
+
                     return `
-                        <div class="server-card" style="background: rgba(102, 126, 234, 0.03);">
+                        <div class="server-card" style="background: rgba(102, 126, 234, 0.03); ${cardBorder}">
                             <div class="server-card-header">
-                                <div class="server-role">
-                                    <span class="server-role-badge">${badgeLabel}</span>
+                                <div class="server-role" style="display: flex; align-items: center; gap: 8px;">
+                                    <span class="execution-order-badge" style="background: ${isPrimary ? 'var(--primary)' : 'var(--color-text-muted)'}; color: white; min-width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 600;">${execOrder.order}</span>
+                                    <span class="server-role-badge" style="${isPrimary ? 'background: linear-gradient(135deg, var(--primary), #764ba2);' : ''}">${badgeLabel}</span>
                                     ${server.name || server.hostname || `Server ${index + 1}`}
                                 </div>
                             </div>

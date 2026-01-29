@@ -1,8 +1,8 @@
 # Claude Memory File - StackBill Ansible Playbook Executor
 
-> **Last Updated:** 2026-01-17
+> **Last Updated:** 2026-01-29
 > **Role:** Coder & Frontend Designer (UI/UX)
-> **Project Status:** Active Development
+> **Project Status:** Testing Phase (Pre-Containerization)
 
 ---
 
@@ -691,15 +691,18 @@ All endpoints support streaming with `?stream=true` or `Accept: text/event-strea
 
 ## Session Notes
 
-### Active Session: 2026-01-17
-- **Focus:** Full StackBill deployment automation
-- **User Role:** Idea provider
+### Active Session: 2026-01-29
+- **Focus:** Testing & Bug Fixes
+- **User Role:** Idea provider & Tester
 - **Claude Role:** Coder & UI/UX Designer
 - **Completed:**
   1. ✅ Dashboard UI with 10 deployment steps
   2. ✅ Backend APIs for all steps
   3. ✅ Ansible playbooks for all steps
-- **Current Status:** Ready for testing
+  4. ✅ Session management with SQLite persistence
+  5. ✅ Session list progress display fix (completedSteps array)
+- **Current Status:** Testing on real infrastructure
+- **Next Phase:** Containerization (Docker + Kubernetes) after testing complete
 
 ---
 
@@ -711,6 +714,43 @@ All endpoints support streaming with `?stream=true` or `Accept: text/event-strea
 | Deployment Order | Strict (sequential unlock) | ✅ |
 | Credential Management | Session + Export | ✅ |
 | Progress Persistence | SQLite Database (encrypted) | ✅ |
+
+---
+
+## Future Roadmap
+
+### Phase 1: Testing (Current)
+- Testing all deployment steps on real infrastructure
+- Fixing bugs and issues as they arise
+
+### Phase 2: Containerization (After Testing Complete)
+**Goal:** Convert the entire project to containers for easy deployment
+
+**Deliverables:**
+| Artifact | Purpose |
+|----------|---------|
+| `Dockerfile` | Multi-stage build for backend + frontend |
+| `docker-compose.yml` | Local development and single-node deployment |
+| `k8s/deployment.yaml` | Kubernetes Deployment manifest |
+| `k8s/service.yaml` | Kubernetes Service (ClusterIP/LoadBalancer) |
+| `k8s/configmap.yaml` | Non-sensitive configuration |
+| `k8s/secret.yaml` | Encryption keys, sensitive config |
+| `k8s/pvc.yaml` | Persistent volume for SQLite database |
+| `k8s/ingress.yaml` | Optional ingress for external access |
+
+**Key Considerations:**
+| Component | Current Location | Container Approach |
+|-----------|------------------|-------------------|
+| Backend (Node.js) | Direct execution | `node:20-alpine` base image |
+| Frontend | Static files via Express | Same container or nginx sidecar |
+| Database (SQLite) | `data/stackbill.db` | PersistentVolume in K8s |
+| Encryption keys | `data/.encryption_key` | Kubernetes Secrets |
+| Ansible playbooks | Local `ansible/` directory | Baked into image or ConfigMap |
+| Logs | `logs/` directory | stdout/stderr → container logs |
+
+**Deployment Options:**
+1. **Docker Compose** - Single VM deployment
+2. **Kubernetes** - Cluster deployment with HA support
 
 ---
 

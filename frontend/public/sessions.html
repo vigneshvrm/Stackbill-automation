@@ -406,24 +406,40 @@
         initTheme();
 
         // =====================================================
-        // CONSTANTS
+        // STEP CONFIGURATION (loaded from API)
         // =====================================================
-        const DEPLOYMENT_STEPS = [
+        // Default steps (fallback if API fails)
+        let DEPLOYMENT_STEPS = [
             { id: 'env-check', title: 'Env Check' },
-            { id: 'mysql', title: 'MySQL' },
-            { id: 'mongodb', title: 'MongoDB' },
-            { id: 'rabbitmq', title: 'RabbitMQ' },
             { id: 'kubernetes', title: 'Kubernetes' },
+            { id: 'rabbitmq', title: 'RabbitMQ' },
+            { id: 'mongodb', title: 'MongoDB' },
+            { id: 'mysql', title: 'MySQL' },
             { id: 'nfs', title: 'NFS' },
-            { id: 'kubectl-istio', title: 'Kubectl' },
-            { id: 'helm', title: 'Helm' },
             { id: 'loadbalancer', title: 'Load Balancer' },
-            { id: 'ssl', title: 'SSL' },
+            { id: 'kubectl', title: 'Kubectl & Istio' },
+            { id: 'helm', title: 'Helm' },
             { id: 'stackbill', title: 'StackBill' }
         ];
 
         let sessions = [];
         let sessionToDelete = null;
+
+        // Load step configuration from API
+        async function loadStepConfig() {
+            try {
+                const response = await fetch('/api/steps/flat');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.steps && data.steps.length > 0) {
+                        DEPLOYMENT_STEPS = data.steps.map(s => ({ id: s.id, title: s.title }));
+                        console.log('Loaded step config:', DEPLOYMENT_STEPS.length, 'steps');
+                    }
+                }
+            } catch (error) {
+                console.warn('Failed to load step config, using defaults:', error);
+            }
+        }
 
         // =====================================================
         // LOAD SESSIONS
@@ -1206,7 +1222,10 @@ Note: Server passwords are stored encrypted and will be available when you resum
         // =====================================================
         // INITIALIZE
         // =====================================================
-        loadSessions();
+        (async function init() {
+            await loadStepConfig();  // Load step configuration first
+            loadSessions();          // Then load sessions
+        })();
     </script>
 </body>
 </html>
