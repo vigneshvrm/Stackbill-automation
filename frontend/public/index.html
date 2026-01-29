@@ -4796,8 +4796,14 @@ Note: Server passwords are stored encrypted and will be available when you resum
                 if (response.ok) {
                     const data = await response.json();
                     if (data.success && data.deployments && data.deployments.length > 0) {
+                        console.log('Found active deployments:', data.deployments);
                         return data.deployments[0]; // Return the first (most recent) active deployment
                     }
+                    console.log('No active deployments found');
+                } else if (response.status === 404) {
+                    console.warn('Active deployments endpoint not found (server may need restart)');
+                } else {
+                    console.error('Failed to check active deployments:', response.status, response.statusText);
                 }
             } catch (e) {
                 console.error('Failed to check active deployments:', e);

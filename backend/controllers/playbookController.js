@@ -208,17 +208,26 @@ async function getEventsSince(req, res) {
  */
 async function getActiveDeployments(req, res) {
   const { sessionId } = req.params;
+  const logger = require('../utils/logger');
+
+  logger.debug(`Checking active deployments for session: ${sessionId}`, { sessionId });
 
   if (!sessionId) {
     return res.status(400).json({ error: 'sessionId is required' });
   }
 
-  const deployments = db.getActiveDeploymentsForSession(sessionId);
+  try {
+    const deployments = db.getActiveDeploymentsForSession(sessionId);
+    logger.debug(`Found ${deployments.length} active deployments`, { sessionId, count: deployments.length });
 
-  res.json({
-    success: true,
-    deployments
-  });
+    res.json({
+      success: true,
+      deployments
+    });
+  } catch (error) {
+    logger.error(`Error getting active deployments: ${error.message}`, { sessionId, error: error.stack });
+    res.status(500).json({ error: 'Failed to get active deployments', details: error.message });
+  }
 }
 
 // Export individual handlers
