@@ -25,6 +25,25 @@
         state: present
       when: custom_hostname is defined and custom_hostname | length > 0
 
+    # Re-gather facts after hostname change to update ansible_hostname
+    - name: Re-gather facts after hostname change
+      ansible.builtin.setup:
+        gather_subset:
+          - '!all'
+          - '!min'
+          - 'network'
+      when: custom_hostname is defined and custom_hostname | length > 0
+
+    # Determine the actual node name that Kubernetes will use
+    # Priority: custom_hostname > current hostname (lowercase for K8s compatibility)
+    - name: Set node name variable for Kubernetes
+      ansible.builtin.set_fact:
+        k8s_node_name: "{{ (custom_hostname | default(ansible_hostname)) | lower }}"
+
+    - name: Display node name that will be used
+      ansible.builtin.debug:
+        msg: "Kubernetes node name will be: {{ k8s_node_name }} (from custom_hostname={{ custom_hostname | default('not set') }}, ansible_hostname={{ ansible_hostname }})"
+
   tasks:
     - name: Stop unattended-upgrades service
       ansible.builtin.service:
@@ -243,10 +262,24 @@
     node_ip: "{{ ansible_default_ipv4.address }}"
     load_balancer_ip: "{{ lb_ip | default(ansible_default_ipv4.address) }}"
 
+  pre_tasks:
+    # Determine the actual node name - use lowercase for K8s compatibility
+    # The hostname was already set in the first play, so ansible_hostname should be correct
+    - name: Set node name for this master
+      ansible.builtin.set_fact:
+        k8s_node_name: "{{ (custom_hostname | default(ansible_hostname)) | lower }}"
+
+    - name: Display node naming info for debugging
+      ansible.builtin.debug:
+        msg:
+          - "custom_hostname variable: {{ custom_hostname | default('NOT SET') }}"
+          - "ansible_hostname: {{ ansible_hostname }}"
+          - "K8s node name will be: {{ k8s_node_name }}"
+
   tasks:
     - name: Display node IP configuration
       ansible.builtin.debug:
-        msg: "Node IP: {{ node_ip }}, Control Plane Endpoint: {{ load_balancer_ip }}"
+        msg: "Node IP: {{ node_ip }}, Control Plane Endpoint: {{ load_balancer_ip }}, Node Name: {{ k8s_node_name }}"
 
     - name: Check if cluster is already initialized
       ansible.builtin.stat:
@@ -256,6 +289,7 @@
     - name: Initialize Kubernetes cluster (first master)
       ansible.builtin.command: >
         kubeadm init
+        --node-name={{ k8s_node_name }}
         --pod-network-cidr={{ pod_network_cidr }}
         --apiserver-advertise-address={{ node_ip }}
         --control-plane-endpoint={{ load_balancer_ip }}:6443
@@ -297,8 +331,25 @@
       register: calico_install
       changed_when: "'created' in calico_install.stdout or 'configured' in calico_install.stdout"
 
+    - name: Wait for Calico pods to start initializing
+      ansible.builtin.pause:
+        seconds: 10
+
+    - name: Show registered nodes before waiting (for debugging)
+      ansible.builtin.command: kubectl get nodes -o wide
+      register: nodes_before_wait
+      changed_when: false
+      failed_when: false
+
+    - name: Display registered nodes
+      ansible.builtin.debug:
+        msg:
+          - "Registered nodes in cluster:"
+          - "{{ nodes_before_wait.stdout_lines | default(['No nodes found']) }}"
+          - "Waiting for node: {{ k8s_node_name }}"
+
     - name: Wait for first master to be ready
-      ansible.builtin.command: kubectl wait --for=condition=Ready node/{{ ansible_hostname }} --timeout=300s
+      ansible.builtin.command: kubectl wait --for=condition=Ready node/{{ k8s_node_name }} --timeout=300s
       register: master_ready
       retries: 5
       delay: 30
@@ -341,10 +392,23 @@
     first_master: "{{ groups['master'][0] }}"
     node_ip: "{{ ansible_default_ipv4.address }}"
 
+  pre_tasks:
+    # Determine the actual node name - use lowercase for K8s compatibility
+    - name: Set node name for this master
+      ansible.builtin.set_fact:
+        k8s_node_name: "{{ (custom_hostname | default(ansible_hostname)) | lower }}"
+
+    - name: Display node naming info for debugging
+      ansible.builtin.debug:
+        msg:
+          - "custom_hostname variable: {{ custom_hostname | default('NOT SET') }}"
+          - "ansible_hostname: {{ ansible_hostname }}"
+          - "K8s node name will be: {{ k8s_node_name }}"
+
   tasks:
     - name: Display node IP for this master
       ansible.builtin.debug:
-        msg: "Joining as control-plane with IP: {{ node_ip }}"
+        msg: "Joining as control-plane with IP: {{ node_ip }}, Node Name: {{ k8s_node_name }}"
 
     - name: Check if node is already joined
       ansible.builtin.stat:
@@ -360,6 +424,7 @@
     - name: Join as control-plane node
       ansible.builtin.command: >
         {{ kubernetes_join_command }}
+        --node-name={{ k8s_node_name }}
         --control-plane
         --certificate-key {{ kubernetes_certificate_key }}
         --apiserver-advertise-address={{ node_ip }}
@@ -384,8 +449,23 @@
         mode: '0600'
       when: admin_conf_check.stat.exists or control_plane_join is changed
 
+    - name: Show registered nodes before waiting
+      ansible.builtin.command: kubectl get nodes -o wide
+      register: nodes_list
+      changed_when: false
+      failed_when: false
+      when: control_plane_join is changed
+
+    - name: Display registered nodes
+      ansible.builtin.debug:
+        msg:
+          - "Registered nodes:"
+          - "{{ nodes_list.stdout_lines | default(['Unavailable']) }}"
+          - "Waiting for node: {{ k8s_node_name }}"
+      when: control_plane_join is changed
+
     - name: Wait for this master to be ready
-      ansible.builtin.command: kubectl wait --for=condition=Ready node/{{ ansible_hostname }} --timeout=300s
+      ansible.builtin.command: kubectl wait --for=condition=Ready node/{{ k8s_node_name }} --timeout=300s
       register: node_ready
       retries: 5
       delay: 30
@@ -405,6 +485,19 @@
   vars:
     master_host: "{{ groups['master'][0] }}"
 
+  pre_tasks:
+    # Determine the actual node name - use lowercase for K8s compatibility
+    - name: Set node name for this worker
+      ansible.builtin.set_fact:
+        k8s_node_name: "{{ (custom_hostname | default(ansible_hostname)) | lower }}"
+
+    - name: Display node naming info for debugging
+      ansible.builtin.debug:
+        msg:
+          - "custom_hostname variable: {{ custom_hostname | default('NOT SET') }}"
+          - "ansible_hostname: {{ ansible_hostname }}"
+          - "K8s node name will be: {{ k8s_node_name }}"
+
   tasks:
     - name: Check if node is already joined
       ansible.builtin.stat:
@@ -417,7 +510,7 @@
       when: not kubelet_conf.stat.exists
 
     - name: Join worker to cluster
-      ansible.builtin.command: "{{ kubernetes_join_command }}"
+      ansible.builtin.command: "{{ kubernetes_join_command }} --node-name={{ k8s_node_name }}"
       register: join_result
       when:
         - not kubelet_conf.stat.exists
@@ -425,7 +518,7 @@
 
     - name: Display join result
       ansible.builtin.debug:
-        msg: "{{ 'Node joined cluster successfully' if join_result is changed else 'Node already in cluster' }}"
+        msg: "{{ 'Worker node ' + k8s_node_name + ' joined cluster successfully' if join_result is changed else 'Node already in cluster' }}"
 
 # ==================== FINAL VERIFICATION ====================
 - name: Verify cluster status
@@ -434,6 +527,18 @@
   gather_facts: false
 
   tasks:
+    - name: Show all registered nodes (before wait)
+      ansible.builtin.command: kubectl get nodes -o wide
+      register: nodes_before_wait
+      changed_when: false
+      failed_when: false
+
+    - name: Display registered nodes for verification
+      ansible.builtin.debug:
+        msg:
+          - "Current registered nodes in cluster:"
+          - "{{ nodes_before_wait.stdout_lines | default(['No nodes found']) }}"
+
     - name: Wait for all nodes to be ready
       ansible.builtin.command: kubectl wait --for=condition=Ready nodes --all --timeout=300s
       register: all_nodes_ready
@@ -442,7 +547,7 @@
       until: all_nodes_ready.rc == 0
       changed_when: false
 
-    - name: Get all nodes
+    - name: Get all nodes (final status)
       ansible.builtin.command: kubectl get nodes -o wide
       register: nodes_list
       changed_when: false
