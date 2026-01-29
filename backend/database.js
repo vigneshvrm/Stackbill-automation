@@ -518,13 +518,46 @@ function listSessions() {
     }
   }
 
-  return db.prepare(`
+  // Get all sessions
+  const sessions = db.prepare(`
     SELECT s.*,
-           (SELECT COUNT(*) FROM completed_steps WHERE session_id = s.id) as steps_completed,
+           (SELECT COUNT(*) FROM completed_steps WHERE session_id = s.id AND status = 'completed') as steps_completed,
            (SELECT COUNT(DISTINCT step_id) FROM servers WHERE session_id = s.id) as steps_with_servers
     FROM sessions s
     ORDER BY updated_at DESC
   `).all();
+
+  // Get completed steps for each session (frontend expects completedSteps array)
+  const getCompletedStepsStmt = db.prepare(
+    'SELECT step_id FROM completed_steps WHERE session_id = ? AND status = ?'
+  );
+
+  // Get servers grouped by step for each session
+  const getServersStmt = db.prepare(
+    'SELECT step_id, hostname, role, name FROM servers WHERE session_id = ?'
+  );
+
+  return sessions.map(session => {
+    // Get completed step IDs
+    const completedStepRows = getCompletedStepsStmt.all(session.id, 'completed');
+    const completedSteps = completedStepRows.map(row => row.step_id);
+
+    // Get servers grouped by step
+    const serverRows = getServersStmt.all(session.id);
+    const servers = {};
+    serverRows.forEach(server => {
+      if (!servers[server.step_id]) {
+        servers[server.step_id] = [];
+      }
+      servers[server.step_id].push(server);
+    });
+
+    return {
+      ...session,
+      completedSteps,
+      servers
+    };
+  });
 }
 
 /**
