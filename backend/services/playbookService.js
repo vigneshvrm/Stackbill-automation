@@ -86,8 +86,9 @@ function parseAnsibleOutput(line, currentTask, credentials, service) {
     // Parse credentials from message
     parseCredentials(trimmedMessage, service, credentials);
 
-    // Try to parse JSON message and extract error details
+    // Try to parse JSON message and extract error/debug details
     let errorMessage = null;
+    let debugMessage = null;
     if (trimmedMessage.startsWith('{')) {
       try {
         const parsedJson = JSON.parse(trimmedMessage);
@@ -96,6 +97,11 @@ function parseAnsibleOutput(line, currentTask, credentials, service) {
           if (parsedJson.msg !== undefined) {
             const msgs = Array.isArray(parsedJson.msg) ? parsedJson.msg : [parsedJson.msg];
             msgs.forEach(m => parseCredentials(String(m), service, credentials));
+
+            // Extract debug message for display (for ok/changed tasks with msg)
+            if (status === 'ok' || status === 'changed') {
+              debugMessage = Array.isArray(parsedJson.msg) ? parsedJson.msg.join('\n') : String(parsedJson.msg);
+            }
           }
 
           // Extract error message for failed tasks
@@ -130,6 +136,7 @@ function parseAnsibleOutput(line, currentTask, credentials, service) {
       task: currentTask,
       message: trimmedMessage,
       errorMessage,
+      debugMessage,
       line,
       credentialUpdate
     };

@@ -721,6 +721,20 @@
             color: var(--color-error-500);
         }
 
+        .task-debug-message {
+            display: none;
+            padding: 2px 14px 6px 44px;
+            font-size: 0.8rem;
+            color: var(--color-gray-500);
+            line-height: 1.4;
+        }
+
+        .task-debug-message small {
+            display: block;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+
         @keyframes spin {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
@@ -3972,7 +3986,8 @@
                     taskResults.set(data.task, {
                         success: new Set(),
                         failed: new Set(),
-                        skipped: new Set()
+                        skipped: new Set(),
+                        messages: new Map() // For debug messages
                     });
                 }
             } else if (data.type === 'task_result') {
@@ -3987,7 +4002,8 @@
                             success: new Set(),
                             failed: new Set(),
                             skipped: new Set(),
-                            errors: new Map() // Map of host -> error message
+                            errors: new Map(), // Map of host -> error message
+                            messages: new Map() // Map of host -> debug message
                         });
                     }
 
@@ -3995,6 +4011,10 @@
 
                     if (data.status === 'ok' || data.status === 'changed') {
                         if (friendlyHost) taskData.success.add(friendlyHost);
+                        // Store debug message if available
+                        if (data.debugMessage && friendlyHost) {
+                            taskData.messages.set(friendlyHost, data.debugMessage);
+                        }
                     } else if (data.status === 'fatal') {
                         if (friendlyHost) {
                             taskData.failed.add(friendlyHost);
@@ -4138,6 +4158,7 @@
                     <span class="task-name">${taskName}</span>
                     <span class="task-badge">${badgeText}</span>
                 </div>
+                <div class="task-debug-message"></div>
                 <div class="task-failure-details"></div>
             `;
 
@@ -4212,6 +4233,24 @@
                     badge.textContent = '[Running...]';
                 } else {
                     badge.textContent = `[${completedCount}/${totalServers}]`;
+                }
+            }
+
+            // Display debug messages (for tasks like "Display NFS client status")
+            const debugMsgEl = wrapper.querySelector('.task-debug-message');
+            if (debugMsgEl && taskData.messages && taskData.messages.size > 0 && failedCount === 0) {
+                // Get the first (or most relevant) debug message
+                const firstMsg = taskData.messages.values().next().value;
+                if (firstMsg && !firstMsg.includes('CREDENTIALS|')) {
+                    // Truncate long messages and format multi-line
+                    let displayMsg = firstMsg;
+                    if (displayMsg.length > 300) {
+                        displayMsg = displayMsg.substring(0, 300) + '...';
+                    }
+                    // Handle multi-line messages (arrays from Ansible)
+                    displayMsg = displayMsg.replace(/\n/g, '<br>');
+                    debugMsgEl.innerHTML = `<small style="color:#6c757d; margin-left:20px;">└─ ${displayMsg}</small>`;
+                    debugMsgEl.style.display = 'block';
                 }
             }
 
